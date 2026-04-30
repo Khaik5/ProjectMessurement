@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+python-dotenv
+pyodbc
+pandas
+numpy
+scikit-learn
+joblib
+pydantic
+python-multipart
+openpyxl
+reportlab
+matplotlib
+python-jose
+passlib[bcrypt]
+bcrypt

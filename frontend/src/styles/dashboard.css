@@ -1,0 +1,43 @@
+.page-stack { display: flex; flex-direction: column; gap: 24px; }
+.hero-card { border-radius: 10px; padding: 32px; color: #fff; background: linear-gradient(115deg, #0b1930 0%, #111827 56%, #5b331b 100%); box-shadow: var(--shadow); }
+.hero-card span { display: inline-flex; padding: 5px 10px; border-radius: 999px; background: rgba(255,122,0,.18); color: #ffb020; font-size: 12px; font-weight: 900; }
+.hero-card h2 { margin-top: 16px; font-size: 34px; font-weight: 950; }
+.hero-card p { margin-top: 10px; max-width: 620px; color: #cbd5e1; line-height: 1.6; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.kpi-card { min-height: 134px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 22px; box-shadow: var(--shadow); display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.kpi-card span { display: block; color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+.kpi-card strong { display: block; margin-top: 18px; font-size: 34px; font-weight: 950; }
+.kpi-card small { display: block; margin-top: 6px; color: var(--muted); }
+.kpi-card svg { color: var(--orange); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.span-3 { grid-column: span 3; }
+.section-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.section-header h2 { font-size: 36px; font-weight: 950; }
+.section-header h3, .card h3 { font-size: 20px; font-weight: 900; margin-bottom: 12px; }
+.button-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.risk-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.risk-summary div { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
+.alert-panel { border-left: 4px solid var(--danger); background: #fee2e2; color: #7f1d1d; border-radius: 10px; padding: 20px; display: flex; gap: 16px; align-items: flex-start; }
+.dataset-card, .model-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 14px; }
+.model-list { display: flex; flex-direction: column; gap: 12px; }
+.model-card.active-model { border-color: var(--orange); background: #fff7ed; }
+.model-card svg { color: var(--orange); }
+.active-pill { color: var(--orange); font-weight: 900; }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.form-grid label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-weight: 800; }
+.form-grid input, .form-grid select, .filters select { border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; outline: 0; background: #fff; color: var(--navy); }
+.filters { display: grid; grid-template-columns: 1fr 190px 190px; gap: 12px; margin: 16px 0; }
+.pagination { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; color: var(--muted); }
+.search-box { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; background: #fff; }
+.search-box input { border: 0; outline: 0; width: 100%; padding: 12px 0; }
+.upload-box { margin-top: 18px; min-height: 250px; border: 2px dashed #cbd5e1; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; color: var(--muted); transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.upload-box:hover { border-color: var(--orange); background: #fff7ed; transform: translateY(-2px); }
+.upload-box svg { color: var(--orange); }
+.upload-box input { display: none; }
+.export-list { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+@media (max-width: 1100px) {
+  .kpi-grid, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .span-3 { grid-column: auto; }
+  .filters { grid-template-columns: 1fr; }
+}

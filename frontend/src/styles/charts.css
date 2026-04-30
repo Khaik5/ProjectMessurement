@@ -1,0 +1,17 @@
+.heatmap-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.heat-cell { min-height: 78px; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid transparent; }
+.heat-cell strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.heat-cell span { font-weight: 950; }
+.matrix-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.matrix-grid div { min-height: 110px; border-radius: 10px; background: linear-gradient(135deg, #ff7a00, #c1121f); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.matrix-grid span { font-weight: 900; }
+.matrix-grid strong { font-size: 34px; }
+@media (max-width: 900px) {
+  .heatmap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.matrix-wrap { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
+.matrix-row { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(5, minmax(120px, 1fr)); gap: 8px; align-items: center; }
+.matrix-row > strong, .matrix-row > span { min-height: 38px; display: flex; align-items: center; padding: 8px 10px; border-radius: 10px; }
+.matrix-head > span { background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+.heat-cell { justify-content: center; font-weight: 900; border: 1px solid transparent; }
+.matrix-row > .heat-cell { min-height: 38px; flex-direction: row; }

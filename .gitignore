@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.pkl
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Generated reports and model artifacts
+backend/app/ml/artifacts/*.joblib
+backend/app/ml/artifacts/*.json
+backend/app/ml/artifacts/*.pkl
+*.xlsx
+*.pdf
+*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
