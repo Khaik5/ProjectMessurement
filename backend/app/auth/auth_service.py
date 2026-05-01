@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.auth.auth_schemas import RegisterRequest, UserUpdateRequest
 from app.auth.auth_utils import create_access_token, hash_password, verify_password
 from app.permission_database import execute_query, fetch_all, fetch_one, insert_and_get_id
+import re
 
 
 def _roles_for_user(user_id: int) -> list[str]:
@@ -117,6 +118,55 @@ def create_user(payload: RegisterRequest) -> dict:
     return user
 
 
+def create_public_user(payload) -> dict:
+    """
+    Tạo user mới từ public registration
+    - Validate email format
+    - Kiểm tra password và confirm_password khớp nhau
+    - Kiểm tra username và email chưa tồn tại
+    - Mặc định role là "Viewer"
+    """
+    # Validate email format
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, payload.email):
+        raise ValueError("Invalid email format")
+    
+    # Kiểm tra password và confirm_password
+    if payload.password != payload.confirm_password:
+        raise ValueError("Passwords do not match")
+    
+    # Kiểm tra username đã tồn tại
+    existing_username = fetch_one("SELECT UserID FROM Users WHERE Username = ?", [payload.username])
+    if existing_username:
+        raise ValueError("Username already exists")
+    
+    # Kiểm tra email đã tồn tại
+    existing_email = fetch_one("SELECT UserID FROM Users WHERE Email = ?", [payload.email])
+    if existing_email:
+        raise ValueError("Email already exists")
+    
+    # Tạo user mới với role mặc định là "Viewer"
+    new_id = insert_and_get_id(
+        """
+        INSERT INTO Users (Username, FullName, Email, PasswordHash, IsActive, CreatedAt)
+        OUTPUT INSERTED.UserID
+        VALUES (?, ?, ?, ?, 1, GETDATE())
+        """,
+        [payload.username, payload.username, payload.email, hash_password(payload.password)],
+    )
+    
+    # Gán role "Viewer" cho user mới
+    execute_query(
+        "INSERT INTO UserRoles (UserID, RoleID) VALUES (?, ?)",
+        [new_id, role_id("Viewer")],
+    )
+    
+    user = get_user_by_id(new_id)
+    if not user:
+        raise ValueError("User was created but could not be loaded")
+    return user
+
+
 def list_users() -> list[dict]:
     users = fetch_all("SELECT * FROM Users ORDER BY CreatedAt DESC")
     return [_public_user(user) for user in users]
@@ -153,6 +203,30 @@ def update_user(user_id: int, payload: UserUpdateRequest) -> dict:
     if not updated:
         inactive = fetch_one("SELECT * FROM Users WHERE UserID = ?", [user_id])
         return _public_user(inactive) if inactive else {}
+    return updated
+
+
+def update_user_role(user_id: int, new_role: str) -> dict:
+    """
+    Cập nhật role của user (chỉ dành cho Admin)
+    """
+    user = fetch_one("SELECT UserID FROM Users WHERE UserID = ?", [user_id])
+    if not user:
+        raise ValueError("User not found")
+    
+    # Validate role
+    valid_roles = ["Admin", "Developer", "Viewer"]
+    if new_role not in valid_roles:
+        raise ValueError(f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+    
+    # Xóa role cũ và gán role mới
+    execute_query("DELETE FROM UserRoles WHERE UserID = ?", [user_id])
+    execute_query("INSERT INTO UserRoles (UserID, RoleID) VALUES (?, ?)", [user_id, role_id(new_role)])
+    
+    # Trả về user đã cập nhật
+    updated = get_user_by_id(user_id)
+    if not updated:
+        raise ValueError("User was updated but could not be loaded")
     return updated
 
 

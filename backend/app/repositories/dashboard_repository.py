@@ -161,7 +161,8 @@ def risk_heatmap_v2(project_id: int, dataset_id: int, limit: int = 80):
             p.churn_score,
             r.name AS risk_level,
             r.color,
-            p.suggested_action
+            p.suggested_action,
+            CASE WHEN p.model_id IS NULL THEN 'Measurement fallback' ELSE 'AI production model' END AS model_source
         FROM Predictions p
         JOIN RiskLevels r ON r.id = p.risk_level_id
         WHERE p.project_id = ? AND p.dataset_id = ?

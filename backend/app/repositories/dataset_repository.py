@@ -92,15 +92,28 @@ def analysis_summary(dataset_id: int):
 def trainable(project_id: int):
     return fetch_all(
         """
-        SELECT d.*
+        SELECT
+            d.*,
+            stats.labeled_records,
+            stats.no_defect_count,
+            stats.defect_count
         FROM MetricsDatasets d
+        CROSS APPLY (
+            SELECT
+                COUNT(*) AS labeled_records,
+                SUM(CASE WHEN mr.defect_label = 0 THEN 1 ELSE 0 END) AS no_defect_count,
+                SUM(CASE WHEN mr.defect_label = 1 THEN 1 ELSE 0 END) AS defect_count
+            FROM MetricRecords mr
+            WHERE mr.dataset_id = d.id
+              AND mr.project_id = d.project_id
+              AND mr.defect_label IS NOT NULL
+        ) stats
         WHERE d.project_id = ?
           AND d.status IN ('VALIDATED','TRAINED','ANALYZED')
           AND d.has_label = 1
-          AND EXISTS (
-              SELECT 1 FROM MetricRecords mr
-              WHERE mr.dataset_id = d.id AND mr.defect_label IS NOT NULL
-          )
+          AND stats.labeled_records >= 4
+          AND stats.no_defect_count >= 2
+          AND stats.defect_count >= 2
         ORDER BY d.uploaded_at DESC
         """,
         [project_id],
@@ -170,11 +183,11 @@ def insert_metric_records(rows: list[tuple]):
             code_churn, change_request_backlog, pending_effort_hours, percent_reused,
             defect_count, defect_label,
             kloc, comment_ratio, defect_density,
-            size_score, complexity_score, coupling_score, churn_score, defect_density_score, cohesion_score,
+            size_score, complexity_score, coupling_score, churn_score, defect_density_score, cohesion_score, reuse_score,
             risk_score,
             recorded_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
         """,
         rows,
     )

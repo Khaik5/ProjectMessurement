@@ -374,3 +374,49 @@ def report_pdf(report_id: int) -> bytes:
     if not dataset_id:
         raise ValueError("Report is not linked to a dataset")
     return _pdf_for_dataset(dataset_id, report["title"])
+
+
+def export_multiple_reports(report_ids: list[int], format: str = "csv") -> bytes:
+    """
+    Export nhiều reports cùng lúc
+    Nếu chỉ có 1 report: trả về file đơn
+    Nếu nhiều reports: trả về file ZIP chứa tất cả
+    """
+    import zipfile
+    
+    if len(report_ids) == 1:
+        # Chỉ có 1 report, trả về file đơn
+        if format == "csv":
+            return report_csv(report_ids[0])
+        elif format == "xlsx":
+            return report_xlsx(report_ids[0])
+        elif format == "pdf":
+            return report_pdf(report_ids[0])
+        else:
+            return report_csv(report_ids[0])
+    
+    # Nhiều reports, tạo ZIP file
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for report_id in report_ids:
+            try:
+                if format == "csv":
+                    content = report_csv(report_id)
+                    filename = f"report_{report_id}.csv"
+                elif format == "xlsx":
+                    content = report_xlsx(report_id)
+                    filename = f"report_{report_id}.xlsx"
+                elif format == "pdf":
+                    content = report_pdf(report_id)
+                    filename = f"report_{report_id}.pdf"
+                else:
+                    content = report_csv(report_id)
+                    filename = f"report_{report_id}.csv"
+                
+                zip_file.writestr(filename, content)
+            except Exception as e:
+                # Nếu có lỗi với 1 report, bỏ qua và tiếp tục
+                print(f"Error exporting report {report_id}: {str(e)}")
+                continue
+    
+    return buffer.getvalue()

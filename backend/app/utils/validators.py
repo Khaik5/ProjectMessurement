@@ -29,6 +29,7 @@ OPTIONAL_COLUMNS = [
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     aliases = {
+        "loc": "loc",
         "LOC": "loc",
         "Module": "module_name",
         "module": "module_name",
@@ -36,26 +37,35 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         "module_path": "module_path",
         "churn": "code_churn",
         "codeChurn": "code_churn",
+        "codechurn": "code_churn",
         "code churn": "code_churn",
         "label": "defect_label",
         "defect": "defect_label",
         "defects": "defect_count",
         "defectCount": "defect_count",
+        "defectcount": "defect_count",
         "nCLOC": "ncloc",
         "NCLOC": "ncloc",
         "CLOC": "cloc",
         "cyclomatic": "cyclomatic_complexity",
         "cyclomaticComplexity": "cyclomatic_complexity",
+        "cyclomaticcomplexity": "cyclomatic_complexity",
         "depth": "depth_of_nesting",
         "nesting_depth": "depth_of_nesting",
         "ifc": "information_flow_complexity",
         "informationFlowComplexity": "information_flow_complexity",
+        "informationflowcomplexity": "information_flow_complexity",
         "reuse_percent": "percent_reused",
         "percentReuse": "percent_reused",
+        "percentreuse": "percent_reused",
         "backlog": "change_request_backlog",
         "pending_effort": "pending_effort_hours",
     }
-    return df.rename(columns={column: aliases.get(column, column) for column in df.columns})
+    normalized = {}
+    for column in df.columns:
+        clean = str(column).strip()
+        normalized[column] = aliases.get(clean, aliases.get(clean.lower(), clean))
+    return df.rename(columns=normalized)
 
 
 def validate_metrics_dataframe(df: pd.DataFrame, require_label: bool = False) -> tuple[bool, list[str], pd.DataFrame]:
@@ -90,10 +100,12 @@ def validate_metrics_dataframe(df: pd.DataFrame, require_label: bool = False) ->
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Fill required defaults / derived columns rules
+    # Required numeric columns
     if "loc" in df.columns:
-        if (df["loc"] <= 0).any():
-            errors.append("loc must be > 0")
+        if df["loc"].isna().any():
+            errors.append("loc must be numeric")
+        if (df["loc"].dropna() < 0).any():
+            errors.append("loc must be >= 0")
     else:
         errors.append("Missing columns: loc")
 
@@ -101,8 +113,30 @@ def validate_metrics_dataframe(df: pd.DataFrame, require_label: bool = False) ->
         if col not in df.columns:
             errors.append(f"Missing columns: {col}")
         else:
-            if (df[col] < 0).any():
+            if df[col].isna().any():
+                errors.append(f"{col} must be numeric")
+            if (df[col].dropna() < 0).any():
                 errors.append(f"{col} must be >= 0")
+
+    non_negative_optional = [
+        "ncloc",
+        "cloc",
+        "cyclomatic_complexity",
+        "depth_of_nesting",
+        "information_flow_complexity",
+        "change_request_backlog",
+        "pending_effort_hours",
+        "defect_count",
+    ]
+    for col in non_negative_optional:
+        if col in df.columns and (df[col].dropna() < 0).any():
+            errors.append(f"{col} must be >= 0")
+
+    for col in ["cohesion", "percent_reused"]:
+        if col in df.columns:
+            values = df[col].dropna()
+            if (values < 0).any() or (values > 100).any():
+                errors.append(f"{col} must be in [0,1] or [0,100]")
 
     # ncloc/cloc defaults
     if "ncloc" not in df.columns and "loc" in df.columns:
@@ -126,12 +160,17 @@ def validate_metrics_dataframe(df: pd.DataFrame, require_label: bool = False) ->
         else:
             errors.append("Missing columns: code_churn (or change_request_backlog/pending_effort_hours to derive it)")
     else:
-        if (df["code_churn"].fillna(0) < 0).any():
+        if df["code_churn"].isna().any():
+            errors.append("code_churn must be numeric")
+        if (df["code_churn"].dropna() < 0).any():
             errors.append("code_churn must be >= 0")
 
     # defect_label validation
-    if "defect_label" in df.columns and df["defect_label"].notna().any():
-        if not bool(df["defect_label"].dropna().isin([0, 1]).all()):
+    if "defect_label" in df.columns:
+        labels = df["defect_label"]
+        if labels.notna().any() and labels.isna().any():
+            errors.append("defect_label must be present for all rows or omitted for prediction-only datasets")
+        if labels.notna().any() and not bool(labels.dropna().isin([0, 1]).all()):
             errors.append("defect_label must be 0 or 1")
 
     if require_label and ("defect_label" not in df.columns or not df["defect_label"].notna().any()):

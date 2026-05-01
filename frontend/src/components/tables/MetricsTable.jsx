@@ -55,7 +55,7 @@ export default function MetricsTable({ rows = [] }) {
                 {hasPredictions ? <td><span className={`badge ${predictionClass(label)}`}>{label}</span></td> : null}
                 {hasPredictions ? <td>{row.defect_probability !== undefined ? fmtPercent(row.defect_probability) : '-'}</td> : null}
                 {hasPredictions ? <td><Badge level={level}>{level}</Badge></td> : null}
-                {hasPredictions ? <td>{row.model_used || (row.model_id ? 'DefectAI P7 Production Model' : 'Measurement-based fallback')}</td> : null}
+                {hasPredictions ? <td>{row.model_source || row.model_used || (row.model_id ? 'AI production model' : 'Measurement fallback')}</td> : null}
                 <td>{fmtDate(row.created_at || row.timestamp || row.recorded_at)}</td>
               </tr>
             );

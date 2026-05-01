@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
-from app.auth.auth_dependencies import require_permission
+from app.auth.auth_dependencies import require_permission, RoleChecker
 from app.controllers import history_controller
 from app.utils.response_utils import api_success
 
@@ -28,5 +28,8 @@ def reanalyze(dataset_id: int, project_id: int = Query(default=1), model_id: int
 
 
 @router.delete("/{dataset_id}")
-def archive(dataset_id: int, current_user: dict = Depends(require_permission("HISTORY_DELETE"))):
+def archive(dataset_id: int, current_user: dict = Depends(RoleChecker(["Admin"]))):
+    """
+    Chỉ ADMIN mới được xóa history (Developer và Viewer không được phép)
+    """
     return api_success(history_controller.archive(dataset_id), "Dataset archived")

@@ -35,6 +35,15 @@ def delete(report_id: int, user_id: int | None = None):
     return report_service.delete(report_id, user_id)
 
 
+def export_multiple(report_ids: list[int], format: str = "csv"):
+    """
+    Export nhiều reports cùng lúc
+    Nếu chỉ có 1 report: trả về file đơn
+    Nếu nhiều reports: trả về file ZIP chứa tất cả
+    """
+    return export_service.export_multiple_reports(report_ids, format)
+
+
 def export_dataset_pdf(dataset_id: int):
     return export_service.dataset_pdf(dataset_id)
 

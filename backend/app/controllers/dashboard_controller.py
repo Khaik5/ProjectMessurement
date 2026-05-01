@@ -4,10 +4,8 @@ from app.services import dashboard_service
 def summary(project_id: int, dataset_id: int | None = None):
     return dashboard_service.summary(project_id, dataset_id)
 
-
 def charts(project_id: int, dataset_id: int | None = None):
     return dashboard_service.charts(project_id, dataset_id)
-
 
 def risk_distribution(project_id: int, dataset_id: int | None = None):
     return dashboard_service.risk_distribution(project_id, dataset_id)

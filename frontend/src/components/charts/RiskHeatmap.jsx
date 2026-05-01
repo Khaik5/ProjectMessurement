@@ -3,7 +3,18 @@ import { riskClass, riskFromProbability } from '../../utils/riskUtils.js';
 import { fmtPercent } from '../../utils/formatters.js';
 
 export default function RiskHeatmap({ data = [] }) {
-  if (!data.length) return <EmptyState title="No risk heatmap" />;
+  const rows = Array.isArray(data)
+    ? data
+    : (Array.isArray(data?.rows)
+      ? data.rows
+      : (Array.isArray(data?.heatmap)
+        ? data.heatmap.map((item) => ({
+          module_name: item.x,
+          defect_probability: item.value,
+          risk_level: item.risk_level
+        }))
+        : []));
+  if (!rows.length) return <EmptyState title="No risk heatmap" />;
   const columns = [
     ['Size', 'size_score'],
     ['Complexity', 'complexity_score'],
@@ -17,7 +28,7 @@ export default function RiskHeatmap({ data = [] }) {
         <span>Module</span>
         {columns.map(([label]) => <span key={label}>{label}</span>)}
       </div>
-      {data.slice(0, 30).map((item) => (
+      {rows.slice(0, 30).map((item) => (
         <div key={`${item.module_name}-${item.defect_probability}`} className="matrix-row">
           <strong>{item.module_name}</strong>
           {columns.map(([label, key]) => (

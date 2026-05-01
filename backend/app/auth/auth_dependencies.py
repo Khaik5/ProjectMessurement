@@ -28,16 +28,54 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
     return user
 
 
-def require_permission(permission_code: str) -> Callable:
+def require_permission(permission_code: str | list[str]) -> Callable:
+    """
+    Dependency để kiểm tra permission
+    Hỗ trợ cả single permission hoặc list permissions (OR logic)
+    """
     def dependency(current_user: dict = Depends(get_current_user)) -> dict:
         roles = set(current_user.get("roles") or [])
         permissions = set(current_user.get("permissions") or [])
-        if "Admin" in roles or permission_code in permissions:
+        
+        # Admin có toàn quyền
+        if "Admin" in roles:
             return current_user
+        
+        # Kiểm tra permission
+        if isinstance(permission_code, list):
+            # OR logic: có ít nhất 1 permission trong list
+            if any(perm in permissions for perm in permission_code):
+                return current_user
+        else:
+            # Single permission
+            if permission_code in permissions:
+                return current_user
+        
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Permission denied: {permission_code} is required",
         )
 
     return dependency
+
+
+class RoleChecker:
+    """
+    Dependency class để kiểm tra role của user
+    Sử dụng: dependencies=[Depends(RoleChecker(["Admin", "Developer"]))]
+    """
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+
+    def __call__(self, current_user: dict = Depends(get_current_user)) -> dict:
+        user_roles = set(current_user.get("roles") or [])
+        
+        # Kiểm tra xem user có ít nhất 1 role trong allowed_roles
+        if not user_roles.intersection(self.allowed_roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Required roles: {', '.join(self.allowed_roles)}",
+            )
+        
+        return current_user
 

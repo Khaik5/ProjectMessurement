@@ -1,7 +1,7 @@
 import { Lock, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext.jsx';
 
@@ -53,6 +53,9 @@ export default function Login() {
         </div>
         {error ? <div className="auth-error">{error}</div> : null}
         <button className="auth-button" disabled={loading}>{loading ? 'Signing in...' : 'LOGIN'}</button>
+        <div style={{ textAlign: 'center', fontSize: '14px', color: '#64748b', marginTop: '12px' }}>
+          Chưa có tài khoản? <Link to="/public-register" style={{ color: '#6366f1', fontWeight: '600', textDecoration: 'none' }}>Đăng ký ngay</Link>
+        </div>
       </motion.form>
     </div>
   );

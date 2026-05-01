@@ -22,3 +22,9 @@ class ReportRead(BaseModel):
     summary_json: str | None
     file_path: str | None
     created_at: datetime
+
+
+class ExportMultipleReportsRequest(BaseModel):
+    """Schema cho việc export nhiều reports cùng lúc"""
+    report_ids: list[int]
+    format: str = "csv"  # csv, pdf, xlsx

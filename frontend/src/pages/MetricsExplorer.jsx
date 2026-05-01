@@ -343,7 +343,7 @@ export default function MetricsExplorer() {
           <>
             {hasPredictionData ? (
               <div className="success-panel" style={{ marginBottom: 12 }}>
-                <CheckCircle2 size={16} /> {predictionRows.some((row) => row.model_id) ? 'AI production model' : 'Measurement fallback'} - {fmtNumber(predictionRows.length)} predictions loaded from SQL Server.
+                <CheckCircle2 size={16} /> {predictionRows.find((row) => row.model_source)?.model_source || (predictionRows.some((row) => row.model_id) ? 'AI production model' : 'Measurement fallback')} - {fmtNumber(predictionRows.length)} predictions loaded from SQL Server.
               </div>
             ) : (
               <div className="warning-panel" style={{ marginBottom: 12 }}>

@@ -17,6 +17,9 @@ backend/app/ml/artifacts/*.pkl
 *.xlsx
 *.pdf
 *.log
+.pytest_cache/
+pytest-cache-files-*/
+backend/pytest-tmp/
 
 # OS/editor
 .DS_Store

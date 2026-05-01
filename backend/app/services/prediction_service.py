@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import logging
 
 import joblib
+import numpy as np
 import pandas as pd
 
 from app.ml.feature_engineering import P7_FEATURE_COLUMNS, build_p7_features
@@ -11,6 +13,12 @@ from app.schemas.prediction_schema import PredictionRunRequest, PredictionSingle
 from app.services.audit_service import log_action
 from app.utils.measurement_utils import measurement_fallback_message
 from app.utils.risk_utils import classify_risk, prediction_label
+
+logger = logging.getLogger(__name__)
+
+MODEL_SOURCE_AI = "AI production model"
+MODEL_SOURCE_FALLBACK = "Measurement fallback"
+DEFAULT_THRESHOLD = 0.5
 
 
 def _active_estimator(model_id: int | None = None):
@@ -23,19 +31,62 @@ def _active_estimator(model_id: int | None = None):
     try:
         artifact_payload = joblib.load(artifact)
     except Exception as exc:
+        logger.exception("Failed to load ML artifact at %s", artifact)
         return model, None, f"fallback_artifact_unavailable: {exc}"
     if isinstance(artifact_payload, dict) and "estimator" in artifact_payload:
-        return model, artifact_payload, "ai_production_model"
-    return model, {"estimator": artifact_payload, "feature_columns": P7_FEATURE_COLUMNS}, "ai_production_model"
+        return model, artifact_payload, MODEL_SOURCE_AI
+    return model, {"estimator": artifact_payload, "feature_columns": P7_FEATURE_COLUMNS}, MODEL_SOURCE_AI
 
 
 def _predict_probabilities(estimator_payload, features: pd.DataFrame):
     if not estimator_payload:
         return None
     estimator = estimator_payload["estimator"]
-    feature_columns = estimator_payload.get("feature_columns") or P7_FEATURE_COLUMNS
-    X = features.reindex(columns=feature_columns).fillna(0.0)
-    return estimator.predict_proba(X)[:, 1]
+    if not hasattr(estimator, "predict_proba"):
+        raise ValueError("Active estimator does not support predict_proba")
+    metadata = estimator_payload.get("metadata") or {}
+    feature_columns = estimator_payload.get("feature_columns") or metadata.get("feature_columns") or P7_FEATURE_COLUMNS
+    X = features.reindex(columns=feature_columns)
+    X = X.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    probabilities = estimator.predict_proba(X)[:, 1]
+    return np.clip(probabilities.astype(float), 0.0, 1.0)
+
+
+def _threshold(estimator_payload) -> float:
+    metadata = estimator_payload.get("metadata") if isinstance(estimator_payload, dict) else None
+    value = (metadata or {}).get("threshold", DEFAULT_THRESHOLD)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_THRESHOLD
+    return value if 0.0 < value < 1.0 else DEFAULT_THRESHOLD
+
+
+def _prediction_value(probability: float, threshold: float) -> int:
+    return int(float(probability) >= threshold)
+
+
+def _heatmap_payload(results: list[dict], model_source: str) -> dict:
+    heatmap = [
+        {
+            "x": row.get("module_name"),
+            "y": "defect_probability",
+            "value": float(row.get("defect_probability") or 0.0),
+            "risk_level": row.get("risk_level"),
+        }
+        for row in results
+    ]
+    probabilities = [float(row.get("defect_probability") or 0.0) for row in results]
+    high_risk_count = sum(1 for row in results if row.get("risk_level") in {"HIGH", "CRITICAL"})
+    return {
+        "heatmap": heatmap,
+        "summary": {
+            "total_modules": len(results),
+            "high_risk_count": high_risk_count,
+            "average_defect_probability": round(float(np.mean(probabilities)), 4) if probabilities else 0.0,
+            "model_source": model_source,
+        },
+    }
 
 
 def _risk_id(level: str) -> int:
@@ -52,12 +103,16 @@ def predict_single(payload: PredictionSingleRequest):
     ml_probs = None
     try:
         ml_probs = _predict_probabilities(estimator, features)
-    except Exception:
-        source = "fallback_model_error"
+    except Exception as exc:
+        logger.exception("Prediction failed with active model; falling back to measurement risk")
+        source = f"fallback_model_error: {exc}"
     used_active = ml_probs is not None
-    prob = round((0.75 * float(ml_probs[0]) + 0.25 * measurement_risk), 4) if used_active else round(measurement_risk, 4)
+    threshold = _threshold(estimator) if used_active else DEFAULT_THRESHOLD
+    prob = round(float(ml_probs[0]) if used_active else measurement_risk, 4)
+    prob = max(0.0, min(1.0, prob))
     risk = classify_risk(prob)
     row = features.iloc[0].to_dict()
+    predicted = _prediction_value(prob, threshold)
     prediction_id = prediction_repository.insert_prediction(
         {
             "project_id": payload.project_id,
@@ -69,7 +124,7 @@ def predict_single(payload: PredictionSingleRequest):
             "coupling": payload.coupling,
             "code_churn": payload.code_churn,
             "defect_probability": prob,
-            "prediction": int(prob >= 0.5),
+            "prediction": predicted,
             "prediction_label": prediction_label(prob),
             "risk_score": measurement_risk,
             "defect_density": row.get("defect_density"),
@@ -82,17 +137,23 @@ def predict_single(payload: PredictionSingleRequest):
         }
     )
     log_action("prediction.single", "Prediction", prediction_id, payload.project_id, details={"model_source": source})
+    model_source = MODEL_SOURCE_AI if used_active else MODEL_SOURCE_FALLBACK
     return {
         **row,
         "id": prediction_id,
         "defect_probability": prob,
-        "prediction": int(prob >= 0.5),
+        "prediction": predicted,
         "prediction_label": prediction_label(prob),
         "risk_score": measurement_risk,
         "risk_level": risk["name"],
         "suggested_action": risk["suggested_action"],
-        "model_source": source,
-        "message": measurement_fallback_message(used_active),
+        "model_source": model_source,
+        "model_used": model.get("name") if model and used_active else "Measurement-based fallback",
+        "used_fallback": not used_active,
+        "fallback_reason": None if used_active else source,
+        "threshold": threshold,
+        "warnings": features.attrs.get("warnings", []),
+        "message": measurement_fallback_message(used_active, source),
     }
 
 
@@ -105,6 +166,7 @@ def predict_batch(payload: PredictionRunRequest):
     try:
         ml_probs = _predict_probabilities(estimator, features)
     except Exception as exc:
+        logger.exception("Batch prediction failed with active model; falling back to measurement risk")
         estimator = None
         ml_probs = None
         source = f"fallback_model_error: {exc}"
@@ -112,13 +174,17 @@ def predict_batch(payload: PredictionRunRequest):
     rows = []
     results = []
     used_active = ml_probs is not None
+    threshold = _threshold(estimator) if used_active else DEFAULT_THRESHOLD
+    model_source = MODEL_SOURCE_AI if used_active else MODEL_SOURCE_FALLBACK
     for idx, feature in features.reset_index(drop=True).iterrows():
         measurement_risk = round(float(feature.get("risk_score") or 0.0), 4)
         ml_prob = float(ml_probs[idx]) if used_active else None
-        prob = round((0.75 * ml_prob + 0.25 * measurement_risk), 4) if used_active else measurement_risk
+        prob = round(ml_prob if used_active else measurement_risk, 4)
+        prob = max(0.0, min(1.0, prob))
         risk = classify_risk(prob)
         risk_id = _risk_id(risk["name"])
         label = prediction_label(prob)
+        predicted = _prediction_value(prob, threshold)
         rows.append(
             (
                 payload.project_id,
@@ -130,7 +196,7 @@ def predict_batch(payload: PredictionRunRequest):
                 float(feature["coupling"]),
                 float(feature["code_churn"]),
                 prob,
-                int(prob >= 0.5),
+                predicted,
                 label,
                 float(measurement_risk),
                 None if pd.isna(feature.get("defect_density")) else float(feature.get("defect_density")),
@@ -146,13 +212,14 @@ def predict_batch(payload: PredictionRunRequest):
             {
                 **feature.to_dict(),
                 "defect_probability": prob,
-                "prediction": int(prob >= 0.5),
+                "prediction": predicted,
                 "prediction_label": label,
                 "risk_score": float(measurement_risk),
                 "risk_level": risk["name"],
                 "suggested_action": risk["suggested_action"],
-                "model_source": "AI production model" if used_active else "Measurement fallback",
+                "model_source": model_source,
                 "model_used": model.get("name") if model and used_active else "Measurement-based fallback",
+                "used_fallback": not used_active,
             }
         )
     prediction_repository.insert_predictions(rows)
@@ -164,15 +231,20 @@ def predict_batch(payload: PredictionRunRequest):
         current_model_id=model["id"] if model and used_active else None,
     )
     log_action("prediction.batch", "Prediction", None, payload.project_id, details={"dataset_id": payload.dataset_id, "rows": len(rows), "model_source": source})
+    heatmap_data = _heatmap_payload(results, model_source)
     return {
         "dataset_id": payload.dataset_id,
         "total_modules": len(results),
         "predictions_created": len(rows),
         "used_model": model.get("name") if model and used_active else "Measurement-based fallback",
-        "model_source": "AI production model" if used_active else source,
+        "model_source": model_source,
+        "fallback_reason": None if used_active else source,
         "used_fallback": not used_active,
-        "message": "Dataset analyzed successfully" if used_active else measurement_fallback_message(False),
+        "threshold": threshold,
+        "warnings": features.attrs.get("warnings", []),
+        "message": "Dataset analyzed successfully" if used_active else measurement_fallback_message(False, source),
         "results": results,
+        **heatmap_data,
     }
 
 
@@ -189,11 +261,16 @@ def dataset_predictions(dataset_id: int):
     if not dataset:
         raise ValueError(f"Dataset #{dataset_id} not found")
     rows = prediction_repository.by_dataset(dataset_id)
+    heatmap_data = _heatmap_payload(
+        rows,
+        MODEL_SOURCE_FALLBACK if rows and all(row.get("model_id") is None for row in rows) else MODEL_SOURCE_AI,
+    )
     return {
         "dataset_id": dataset_id,
         "rows": rows,
         "total": len(rows),
         "analyzed": bool(rows),
+        **heatmap_data,
         "message": "OK" if rows else "Dataset has not been analyzed yet",
     }
 

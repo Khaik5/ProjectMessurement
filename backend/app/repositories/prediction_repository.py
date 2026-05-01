@@ -119,7 +119,8 @@ def by_dataset(dataset_id: int):
             r.color,
             p.suggested_action,
             p.created_at,
-            m.name AS model_used
+            m.name AS model_used,
+            CASE WHEN p.model_id IS NULL THEN 'Measurement fallback' ELSE 'AI production model' END AS model_source
         FROM Predictions p
         LEFT JOIN RiskLevels r ON r.id = p.risk_level_id
         LEFT JOIN MLModels m ON m.id = p.model_id

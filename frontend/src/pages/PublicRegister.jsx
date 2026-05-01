@@ -1,25 +1,25 @@
-import { CreditCard, Lock, Mail, Phone, User } from 'lucide-react';
+import { Lock, Mail, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext.jsx';
-import { authService } from '../auth/authService.js';
+import axiosClient from '../api/axiosClient.js';
 
-export default function Register() {
+export default function PublicRegister() {
   const { user } = useAuth();
   const [form, setForm] = useState({ 
-    full_name: '', 
     username: '', 
     email: '', 
-    phone_number: '', 
     password: '', 
-    confirm: '' 
+    confirm_password: '' 
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const navigate = useNavigate();
 
+  // Nếu đã đăng nhập, chuyển về dashboard
   if (user) return <Navigate to="/dashboard" replace />;
 
   async function submit(event) {
@@ -28,40 +28,52 @@ export default function Register() {
     setError('');
     
     // Validation
+    if (form.username.length < 3) {
+      setError('Username phải có ít nhất 3 ký tự');
+      setLoading(false);
+      return;
+    }
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      setError('Please enter a valid email address');
+      setError('Email không hợp lệ');
       setLoading(false);
       return;
     }
+
     if (form.password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError('Mật khẩu phải có ít nhất 6 ký tự');
       setLoading(false);
       return;
     }
-    if (form.password !== form.confirm) {
-      setError('Passwords do not match');
+
+    if (form.password !== form.confirm_password) {
+      setError('Mật khẩu xác nhận không khớp');
       setLoading(false);
       return;
     }
     
     try {
-      await authService.register({
+      // Gọi API public-register
+      await axiosClient.post('/auth/public-register', {
         username: form.username,
-        full_name: form.full_name,
         email: form.email,
-        phone_number: form.phone_number,
         password: form.password,
-        role: 'Developer',
+        confirm_password: form.confirm_password
       });
+      
       setSuccess(true);
-      setForm({ full_name: '', username: '', email: '', phone_number: '', password: '', confirm: '' });
+      // Chuyển về trang login sau 2 giây
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
     } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.');
+      setError(err.response?.data?.detail || err.message || 'Đăng ký thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
   }
 
+  // Hiển thị màn hình thành công
   if (success) {
     return (
       <div className="auth-page">
@@ -71,12 +83,12 @@ export default function Register() {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.38 }}
         >
-          <h1>Success!</h1>
+          <h1>Thành công!</h1>
           <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '24px' }}>
-            Your account has been created successfully.
+            Tài khoản của bạn đã được tạo thành công. Đang chuyển đến trang đăng nhập...
           </p>
           <Link to="/login">
-            <button className="auth-button">GO TO LOGIN</button>
+            <button className="auth-button">ĐI ĐẾN TRANG ĐĂNG NHẬP</button>
           </Link>
         </motion.div>
       </div>
@@ -95,28 +107,15 @@ export default function Register() {
         <h1>Register</h1>
         
         <label>
-          <span>Full Name</span>
-          <div className="auth-input">
-            <CreditCard size={18} />
-            <input 
-              value={form.full_name} 
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })} 
-              placeholder="Enter your full name" 
-              required 
-              autoFocus 
-            />
-          </div>
-        </label>
-
-        <label>
           <span>Username</span>
           <div className="auth-input">
             <User size={18} />
             <input 
               value={form.username} 
               onChange={(e) => setForm({ ...form, username: e.target.value })} 
-              placeholder="Choose a username" 
+              placeholder="Type your username" 
               required 
+              autoFocus 
             />
           </div>
         </label>
@@ -129,21 +128,8 @@ export default function Register() {
               type="email"
               value={form.email} 
               onChange={(e) => setForm({ ...form, email: e.target.value })} 
-              placeholder="Enter your email" 
+              placeholder="Type your email" 
               required 
-            />
-          </div>
-        </label>
-
-        <label>
-          <span>Phone Number</span>
-          <div className="auth-input">
-            <Phone size={18} />
-            <input 
-              type="tel"
-              value={form.phone_number} 
-              onChange={(e) => setForm({ ...form, phone_number: e.target.value })} 
-              placeholder="Enter your phone number" 
             />
           </div>
         </label>
@@ -156,7 +142,7 @@ export default function Register() {
               type="password" 
               value={form.password} 
               onChange={(e) => setForm({ ...form, password: e.target.value })} 
-              placeholder="Create a password" 
+              placeholder="Type your password" 
               required 
             />
           </div>
@@ -168,8 +154,8 @@ export default function Register() {
             <Lock size={18} />
             <input 
               type="password" 
-              value={form.confirm} 
-              onChange={(e) => setForm({ ...form, confirm: e.target.value })} 
+              value={form.confirm_password} 
+              onChange={(e) => setForm({ ...form, confirm_password: e.target.value })} 
               placeholder="Confirm your password" 
               required 
             />
@@ -189,4 +175,3 @@ export default function Register() {
     </div>
   );
 }
-

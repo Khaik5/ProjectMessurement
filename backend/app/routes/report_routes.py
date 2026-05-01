@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
-from app.auth.auth_dependencies import require_permission
+from app.auth.auth_dependencies import require_permission, RoleChecker
 from app.controllers import report_controller
-from app.schemas.report_schema import ReportGenerateRequest
+from app.schemas.report_schema import ReportGenerateRequest, ExportMultipleReportsRequest
 from app.utils.response_utils import api_success
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -56,5 +56,21 @@ def export_dataset_xlsx(dataset_id: int, current_user: dict = Depends(require_pe
 
 
 @router.delete("/{report_id}")
-def delete_report(report_id: int, current_user: dict = Depends(require_permission("REPORT_DELETE"))):
+def delete_report(report_id: int, current_user: dict = Depends(RoleChecker(["Admin"]))):
+    """
+    Chỉ ADMIN mới được xóa report (Developer và Viewer không được phép)
+    """
     return api_success(report_controller.delete(report_id, current_user.get("user_id")), "Report deleted")
+
+
+@router.post("/export-multiple")
+def export_multiple_reports(payload: ExportMultipleReportsRequest, current_user: dict = Depends(RoleChecker(["Admin", "Developer"]))):
+    """
+    Export nhiều reports cùng lúc (CSV format)
+    Chỉ Admin và Developer được phép (Viewer không được)
+    """
+    return Response(
+        report_controller.export_multiple(payload.report_ids, payload.format),
+        media_type="application/zip" if len(payload.report_ids) > 1 else "text/csv",
+        headers={"Content-Disposition": f"attachment; filename=reports_export.{'zip' if len(payload.report_ids) > 1 else 'csv'}"}
+    )

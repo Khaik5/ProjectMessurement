@@ -137,7 +137,7 @@ export default function Dashboard() {
           <div>
             <h3>Viewing Analysis: {summary?.dataset_name || `Dataset #${datasetId}`}</h3>
             <p className="muted">
-              Model used: {summary?.active_model_name || 'DefectAI P7 Production Model'}
+              Model source: {summary?.used_fallback ? 'Measurement fallback' : (summary?.active_model_name || 'AI production model')}
             </p>
           </div>
           <div className="button-row">

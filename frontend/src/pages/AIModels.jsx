@@ -48,14 +48,18 @@ export default function AIModels() {
         mlService.comparison(projectId),
         mlService.trainingGuide()
       ]);
+
       setDatasets(trainable || []);
       setModels(modelData || []);
       setRuns(runData || []);
       setComparison(cmp || []);
       setGuide(guideData);
-      if (!form.dataset_id && trainable?.length) {
-        setForm((current) => ({ ...current, dataset_id: String(trainable[0].id) }));
-      }
+      
+      setForm((current) => {
+        const stillTrainable = trainable?.some((dataset) => String(dataset.id) === String(current.dataset_id));
+        if (stillTrainable) return current;
+        return { ...current, dataset_id: trainable?.length ? String(trainable[0].id) : '' };
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -181,13 +185,15 @@ export default function AIModels() {
       <div className="grid-2">
         <Card>
           <h3>Training Panel</h3>
-          <p className="muted">Select a dataset with defect_label. The backend will train Logistic Regression, Random Forest, and Neural Network, then activate the best model by F1-score and ROC-AUC.</p>
+          <p className="muted">Select a dataset with defect_label. The backend will train Logistic Regression, Random Forest, and Neural Network, then activate the best model by ROC-AUC and F1-score.</p>
           <div className="form-grid" style={{ marginTop: 14 }}>
             <label>Trainable Dataset
               <select value={form.dataset_id} onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}>
                 <option value="">Select dataset...</option>
                 {datasets.map((d) => (
-                  <option key={d.id} value={d.id}>#{d.id} - {d.file_name || d.name} ({d.row_count} rows)</option>
+                  <option key={d.id} value={d.id}>
+                    #{d.id} - {d.file_name || d.name} ({d.labeled_records || d.row_count} labeled rows)
+                  </option>
                 ))}
               </select>
             </label>

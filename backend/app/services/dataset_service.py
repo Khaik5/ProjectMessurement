@@ -54,13 +54,13 @@ async def upload_dataset(file, project_id: int = 1, uploaded_by_id: int | None =
         )
         return {"dataset": dataset_repository.get_dataset(dataset_id), "validation": validation_payload, "preview": []}
 
-    has_label = "defect_label" in df.columns and df["defect_label"].notna().any()
-    if "defect_label" in df.columns:
-        df["defect_label"] = df["defect_label"].fillna(0).astype(int)
+    has_label = "defect_label" in df.columns and df["defect_label"].notna().all()
+    if has_label:
+        df["defect_label"] = df["defect_label"].astype(int)
     else:
         df["defect_label"] = None
 
-    # Compute measurement metrics/scores (risk_score, defect_density, etc.)
+    # Compute measurement metrics/scores without label-derived leakage.
     df = compute_measurement_metrics(df)
 
     dataset_id = dataset_repository.create_dataset(
@@ -105,6 +105,7 @@ async def upload_dataset(file, project_id: int = 1, uploaded_by_id: int | None =
             float(row.get("churn_score") or 0),
             float(row.get("defect_density_score") or 0),
             float(row.get("cohesion_score") or 0),
+            float(row.get("reuse_score") or 0),
             float(row.get("risk_score") or 0),
         )
         for row in df.to_dict(orient="records")
