@@ -13,6 +13,14 @@ import { fmtNumber, fmtPercent } from '../utils/formatters.js';
 
 const projectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID || 1);
 
+function statusBadge(status) {
+  const value = String(status || 'UNKNOWN').toUpperCase();
+  if (value === 'ANALYZED') return 'badge-success';
+  if (value === 'FAILED') return 'badge-danger';
+  if (value === 'ARCHIVED') return 'badge-muted';
+  return 'badge-info';
+}
+
 export default function History() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,8 +95,8 @@ export default function History() {
         <EmptyState title="No datasets yet" description="Upload a CSV in Metrics Explorer to start." />
       ) : (
         <Card>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
+          <div className="table-wrap">
+            <table className="table history-table">
               <thead>
                 <tr>
                   <th>Dataset ID</th>
@@ -112,18 +120,18 @@ export default function History() {
                     <td>{d.uploaded_at ? new Date(d.uploaded_at).toLocaleString() : '-'}</td>
                     <td>{fmtNumber(d.row_count)}</td>
                     <td>{d.has_label ? 'Yes' : 'No'}</td>
-                    <td>{d.status}</td>
+                    <td><span className={`badge ${statusBadge(d.status)}`}>{d.status || 'UNKNOWN'}</span></td>
                     <td>{d.model_used || '-'}</td>
                     <td>{fmtPercent(d.avg_defect_probability)}</td>
                     <td>{fmtNumber(d.high_risk_count)}</td>
                     <td>{fmtNumber(d.critical_count)}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div className="row-actions">
-                        <Button variant="secondary" onClick={() => viewDashboard(d.id)}><Eye size={18} />Dashboard</Button>
-                        <Button variant="secondary" onClick={() => viewMetrics(d.id)}><FileBarChart2 size={18} />Metrics</Button>
-                        <Button variant="secondary" loading={busyId === d.id} onClick={() => reanalyze(d.id)}><RefreshCw size={18} />Analyze</Button>
-                        <a className="btn btn-secondary" href={`${import.meta.env.VITE_API_BASE_URL}/datasets/${d.id}/export/xlsx`}><Download size={18} />Excel</a>
-                        <Button variant="danger" onClick={() => archive(d.id)} disabled={busyId === d.id}><Trash2 size={18} />Archive</Button>
+                      <div className="row-actions history-actions">
+                        <Button size="sm" variant="secondary" onClick={() => viewDashboard(d.id)}><Eye size={15} />Dashboard</Button>
+                        <Button size="sm" variant="secondary" onClick={() => viewMetrics(d.id)}><FileBarChart2 size={15} />Metrics</Button>
+                        <Button size="sm" variant="secondary" loading={busyId === d.id} onClick={() => reanalyze(d.id)}><RefreshCw size={15} />Analyze</Button>
+                        <a className="btn btn-secondary btn-sm" href={`${import.meta.env.VITE_API_BASE_URL}/datasets/${d.id}/export/xlsx`}><Download size={15} />Excel</a>
+                        <Button size="sm" variant="danger" onClick={() => archive(d.id)} disabled={busyId === d.id}><Trash2 size={15} />Archive</Button>
                       </div>
                     </td>
                   </tr>

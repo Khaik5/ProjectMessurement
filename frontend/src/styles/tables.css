@@ -1,5 +1,12 @@
 .table-wrap { overflow: auto; border: 1px solid var(--line-soft); border-radius: 14px; background: #fff; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; min-width: 900px; }
+.history-table { min-width: 1380px; }
+.history-table th, .history-table td { white-space: nowrap; }
+.history-table td:nth-child(2), .history-table td:nth-child(7) {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 thead { position: sticky; top: 0; z-index: 1; }
 th {
   text-align: left;
@@ -12,12 +19,15 @@ th {
   border-bottom: 1px solid var(--line-soft);
   white-space: nowrap;
 }
-td { padding: 14px; border-top: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
+td { padding: 13px 14px; border-top: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
 td select { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff; color: var(--ink); outline: 0; }
 tbody tr { transition: background .16s ease, transform .16s ease; }
 tbody tr:hover { background: #f8fafc; }
 td strong { color: var(--ink); }
 .row-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.history-actions { flex-wrap: nowrap; min-width: max-content; }
+.history-actions .btn { box-shadow: none; }
+.history-actions .btn:hover { box-shadow: var(--shadow-sm); }
 .table-kicker { color: var(--muted); font-size: 12px; display: block; margin-top: 3px; }
 .probability-cell { display: grid; gap: 6px; min-width: 98px; font-weight: 900; color: var(--ink); }
 .probability-cell div { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }

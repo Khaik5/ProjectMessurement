@@ -44,10 +44,108 @@
 .chart-tooltip dt { color: var(--muted); }
 .chart-tooltip dd { margin: 0; font-weight: 850; color: var(--ink); }
 .heatmap-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.matrix-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.matrix-grid div { min-height: 110px; border-radius: 12px; background: #111827; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.matrix-grid span { font-weight: 900; }
-.matrix-grid strong { font-size: 34px; }
+.cmx-card { display: grid; gap: 14px; width: 100%; }
+.cmx-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.cmx-header h4 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 950; }
+.cmx-header p { margin-top: 3px; color: var(--muted); font-size: 13px; }
+.cmx-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: #fff;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.cmx-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cmx-metric {
+  min-height: 62px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  background: linear-gradient(135deg, #fff, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.cmx-metric span { color: var(--muted); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+.cmx-metric strong { margin-top: 4px; color: var(--ink); font-size: 20px; font-weight: 950; }
+.cmx-layout {
+  display: grid;
+  grid-template-columns: 86px repeat(2, minmax(132px, 1fr));
+  grid-template-rows: 30px repeat(2, minmax(132px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.cmx-corner, .cmx-col, .cmx-row {
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.cmx-corner { font-size: 10px; line-height: 1.2; }
+.cmx-row { writing-mode: vertical-rl; transform: rotate(180deg); }
+.cmx-row-negative { grid-column: 1; grid-row: 2; }
+.cmx-row-positive { grid-column: 1; grid-row: 3; }
+.cmx-cell {
+  min-height: 132px;
+  aspect-ratio: 1.35 / 1;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 15px;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  align-items: center;
+  justify-items: center;
+  text-align: center;
+  overflow: hidden;
+  position: relative;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.cmx-cell:hover { box-shadow: var(--shadow-sm); }
+.cmx-cell::after {
+  content: "";
+  position: absolute;
+  inset: auto 14px 0 14px;
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: currentColor;
+  opacity: .45;
+}
+.cmx-cell-top { width: 100%; display: flex; align-items: center; justify-content: space-between; color: currentColor; }
+.cmx-code {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,.72);
+  border: 1px solid rgba(255,255,255,.84);
+  color: currentColor;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
+.cmx-cell strong { color: var(--ink); font-size: clamp(30px, 4vw, 44px); font-weight: 950; line-height: 1; }
+.cmx-cell > span:not(.cmx-code) { color: var(--ink-soft); font-size: 14px; font-weight: 940; }
+.cmx-cell small { color: var(--muted); font-size: 11px; line-height: 1.25; }
+.cmx-tn { grid-column: 2; grid-row: 2; background: linear-gradient(135deg, #ecfdf5, #fff); color: var(--success); border-color: #bbf7d0; }
+.cmx-fp { grid-column: 3; grid-row: 2; background: linear-gradient(135deg, #fffbeb, #fff); color: var(--amber); border-color: #fde68a; }
+.cmx-fn { grid-column: 2; grid-row: 3; background: linear-gradient(135deg, #fff1f2, #fff); color: var(--danger); border-color: #fecaca; }
+.cmx-tp { grid-column: 3; grid-row: 3; background: linear-gradient(135deg, #eff6ff, #fff); color: var(--primary); border-color: #bfdbfe; }
 @media (max-width: 900px) {
   .heatmap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cmx-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cmx-layout { grid-template-columns: 1fr; grid-template-rows: auto; }
+  .cmx-corner, .cmx-col, .cmx-row { display: none; }
+  .cmx-cell { grid-column: auto; grid-row: auto; aspect-ratio: auto; }
 }

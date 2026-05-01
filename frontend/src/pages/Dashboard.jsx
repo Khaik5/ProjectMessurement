@@ -131,30 +131,37 @@ export default function Dashboard() {
       <section className="hero-card">
         <div>
           <span>AI Analytics</span>
-          <h2>{summary?.dataset_name || `Dataset #${datasetId}`}</h2>
+          <h2 title={summary?.dataset_name || `Dataset #${datasetId}`}>{summary?.dataset_name || `Dataset #${datasetId}`}</h2>
           <p>{summary?.used_fallback ? 'Measurement fallback active' : (summary?.active_model_name || 'Production model')}</p>
+          <div className="hero-detail-grid">
+            <span>{fmtNumber(summary?.prediction_count)} predictions</span>
+            <span>{fmtNumber(summary?.high_risk_count)} high risk</span>
+            <span>{fmtNumber(summary?.critical_count || 0)} critical</span>
+            <span>{summary?.analysis_status || 'READY'}</span>
+          </div>
         </div>
         <div className="hero-metric">
           <small>Avg defect probability</small>
           <strong>{fmtPercent(summary?.avg_defect_probability)}</strong>
+          <div className="hero-meter" aria-hidden="true">
+            <i style={{ width: `${Math.min(100, Math.max(0, Number(summary?.avg_defect_probability || 0) * 100))}%` }} />
+          </div>
         </div>
       </section>
 
-      <Card>
-        <SectionHeader
-          compact
-          title="Analysis"
-          description={summary?.analysis_status === 'ANALYZED' ? `${fmtNumber(summary?.prediction_count)} predictions loaded` : summary?.message}
-          actions={(
-            <>
-            <select value={datasetId || ''} onChange={(event) => switchDataset(event.target.value)}>
-              {history.map((item) => <option key={item.id} value={item.id}>#{item.id} - {item.file_name || item.name}</option>)}
-            </select>
-            <Button variant="secondary" onClick={load}>Refresh</Button>
-            <Button onClick={runAnalysisForCurrent}><Play size={18} />Run New Analysis</Button>
-            </>
-          )}
-        />
+      <Card className="command-card">
+        <div className="command-main">
+          <span className="eyebrow">Command Center</span>
+          <h3>Analysis</h3>
+          <p>{summary?.analysis_status === 'ANALYZED' ? `${fmtNumber(summary?.prediction_count)} predictions loaded` : summary?.message}</p>
+        </div>
+        <div className="command-actions">
+          <select value={datasetId || ''} onChange={(event) => switchDataset(event.target.value)} aria-label="Dataset">
+            {history.map((item) => <option key={item.id} value={item.id}>#{item.id} - {item.file_name || item.name}</option>)}
+          </select>
+          <Button variant="secondary" onClick={load}>Refresh</Button>
+          <Button onClick={runAnalysisForCurrent}><Play size={18} />Run New Analysis</Button>
+        </div>
       </Card>
 
       {error ? (
@@ -196,7 +203,15 @@ export default function Dashboard() {
       <div className="grid-2">
         <Card>
           <h3>Confusion Matrix (Active Model)</h3>
-          <ConfusionMatrixChart matrix={(() => { try { return charts?.confusion_matrix ? JSON.parse(charts.confusion_matrix) : null; } catch { return null; } })()} />
+          <ConfusionMatrixChart
+            matrix={(() => { try { return charts?.confusion_matrix ? JSON.parse(charts.confusion_matrix) : null; } catch { return null; } })()}
+            metrics={{
+              accuracy: summary?.active_model_accuracy,
+              precision: summary?.active_model_precision,
+              recall: summary?.active_model_recall,
+              f1: summary?.active_model_f1_score
+            }}
+          />
         </Card>
         <Card><h3>Quality Radar Profile</h3><QualityRadarChart data={radar} /></Card>
       </div>

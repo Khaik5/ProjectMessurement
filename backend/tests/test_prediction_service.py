@@ -1,6 +1,6 @@
 import numpy as np
 
-from app.ml.feature_engineering import P7_FEATURE_COLUMNS
+from app.ml.feature_contract import SAFE_MODEL_FEATURE_COLUMNS
 from app.schemas.prediction_schema import PredictionRunRequest, PredictionSingleRequest
 from app.services import prediction_service
 
@@ -52,8 +52,8 @@ def test_predict_single_missing_artifact_uses_measurement_fallback(monkeypatch):
 def test_predict_single_uses_pure_predict_proba_probability(monkeypatch):
     estimator_payload = {
         "estimator": DummyEstimator([0.83]),
-        "feature_columns": P7_FEATURE_COLUMNS,
-        "metadata": {"threshold": 0.5},
+        "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
+        "metadata": {"threshold": 0.75},
     }
     monkeypatch.setattr(
         prediction_service,
@@ -76,6 +76,8 @@ def test_predict_single_uses_pure_predict_proba_probability(monkeypatch):
     assert result["model_source"] == "AI production model"
     assert result["defect_probability"] == 0.83
     assert result["prediction"] == 1
+    assert result["prediction_label_numeric"] == 1
+    assert result["threshold"] == 0.75
     assert result["prediction_label"] == "Defect"
 
 
@@ -83,8 +85,8 @@ def test_predict_batch_returns_heatmap_ready_contract(monkeypatch):
     inserted_rows = []
     estimator_payload = {
         "estimator": DummyEstimator([0.2, 0.91]),
-        "feature_columns": P7_FEATURE_COLUMNS,
-        "metadata": {"threshold": 0.5},
+        "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
+        "metadata": {"threshold": 0.75},
     }
     metrics = [
         {"module_name": "module_a", "loc": 100, "complexity": 5, "coupling": 2, "code_churn": 10},
@@ -105,6 +107,9 @@ def test_predict_batch_returns_heatmap_ready_contract(monkeypatch):
     assert result["model_source"] == "AI production model"
     assert result["results"][0]["defect_probability"] == 0.2
     assert result["results"][1]["defect_probability"] == 0.91
+    assert result["results"][0]["prediction"] == 0
+    assert result["results"][1]["prediction"] == 1
+    assert result["threshold"] == 0.75
     assert result["heatmap"][1] == {
         "x": "module_b",
         "y": "defect_probability",

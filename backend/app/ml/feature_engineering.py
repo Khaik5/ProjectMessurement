@@ -4,35 +4,14 @@ import math
 import logging
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
+
+from app.ml.feature_contract import ENGINEERED_OUTPUT_COLUMNS
 
 logger = logging.getLogger(__name__)
 
-P7_FEATURE_COLUMNS = [
-    "loc",
-    "ncloc",
-    "cloc",
-    "kloc",
-    "comment_ratio",
-    "complexity",
-    "cyclomatic_complexity",
-    "depth_of_nesting",
-    "coupling",
-    "cohesion",
-    "information_flow_complexity",
-    "code_churn",
-    "change_request_backlog",
-    "pending_effort_hours",
-    "percent_reused",
-    "defect_density",
-    "size_score",
-    "complexity_score",
-    "coupling_score",
-    "churn_score",
-    "cohesion_score",
-    "reuse_score",
-    "risk_score",
-]
+P7_FEATURE_COLUMNS = ENGINEERED_OUTPUT_COLUMNS
 
 OPTIONAL_P7_COLUMNS = [
     "ncloc",
@@ -139,7 +118,13 @@ def build_p7_features(
     out["ncloc"] = col("ncloc", default=math.nan).fillna(loc).round().astype(int).clip(lower=0)
     out["cloc"] = col("cloc").round().astype(int).clip(lower=0)
     out["kloc"] = (loc / 1000.0).clip(lower=0.0)
-    out["comment_ratio"] = (out["cloc"].astype(float) / loc.replace(0, pd.NA)).fillna(0.0).clip(lower=0.0, upper=1.0)
+    comment_ratio = np.divide(
+        out["cloc"].astype(float).to_numpy(),
+        loc.to_numpy(),
+        out=np.zeros(len(out), dtype=float),
+        where=loc.to_numpy() != 0,
+    )
+    out["comment_ratio"] = pd.Series(comment_ratio, index=out.index).clip(lower=0.0, upper=1.0)
 
     complexity = col("complexity")
     cyclomatic = col("cyclomatic_complexity", default=math.nan).fillna(complexity)

@@ -186,6 +186,9 @@ export default function AIModels() {
         <KpiCard label="Precision" value={fmtPercent(productionModel?.precision)} />
         <KpiCard label="Recall" value={fmtPercent(productionModel?.recall)} />
         <KpiCard label="F1-score" value={fmtPercent(productionModel?.f1_score)} />
+        <KpiCard label="ROC-AUC" value={fmtPercent(productionModel?.roc_auc)} />
+        <KpiCard label="PR-AUC" value={fmtPercent(productionModel?.pr_auc)} />
+        <KpiCard label="Threshold" value={productionModel?.threshold ? Number(productionModel.threshold).toFixed(2) : '-'} helper={productionModel?.selection_strategy || 'balanced_f1_with_recall_floor'} />
       </div>
 
       <div className="grid-2">
@@ -223,7 +226,15 @@ export default function AIModels() {
         </Card>
         <Card>
           <SectionHeader compact title="Confusion Matrix" />
-          <ConfusionMatrixChart matrix={latestMatrix} />
+          <ConfusionMatrixChart
+            matrix={latestMatrix}
+            metrics={{
+              accuracy: latestRun?.accuracy,
+              precision: latestRun?.precision,
+              recall: latestRun?.recall,
+              f1: latestRun?.f1_score
+            }}
+          />
         </Card>
       </div>
 
@@ -239,6 +250,8 @@ export default function AIModels() {
                   <span>{model.model_type} - {model.version}</span>
                   <div className="model-score">
                     <span className="badge">ROC-AUC {fmtPercent(model.roc_auc)}</span>
+                    <span className="badge">PR-AUC {fmtPercent(model.pr_auc)}</span>
+                    <span className="badge">Threshold {model.threshold ? Number(model.threshold).toFixed(2) : '-'}</span>
                     <span className="badge">F1 {fmtPercent(model.f1_score)}</span>
                   </div>
                 </div>
@@ -267,6 +280,8 @@ export default function AIModels() {
                   <th>Recall</th>
                   <th>F1</th>
                   <th>ROC-AUC</th>
+                  <th>PR-AUC</th>
+                  <th>Threshold</th>
                   <th>Started</th>
                   <th>Actions</th>
                 </tr>
@@ -282,6 +297,8 @@ export default function AIModels() {
                     <td>{fmtPercent(r.recall)}</td>
                     <td>{fmtPercent(r.f1_score)}</td>
                     <td>{fmtPercent(r.roc_auc)}</td>
+                    <td>{fmtPercent(r.pr_auc)}</td>
+                    <td>{r.threshold ? Number(r.threshold).toFixed(2) : '-'}</td>
                     <td>{r.started_at ? new Date(r.started_at).toLocaleString() : '-'}</td>
                     <td>{canDelete ? <Button variant="danger" onClick={() => deleteRun(r.id)}><Trash2 size={18} />Delete Run</Button> : '-'}</td>
                   </tr>

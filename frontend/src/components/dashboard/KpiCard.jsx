@@ -8,7 +8,7 @@ export default function KpiCard({ label, value, helper, icon: Icon, tone = 'neut
         <strong>{value}</strong>
         {helper ? <small>{helper}</small> : null}
       </div>
-      {Icon ? <Icon size={24} /> : null}
+      {Icon ? <span className="kpi-icon"><Icon size={22} /></span> : null}
     </motion.div>
   );
 }

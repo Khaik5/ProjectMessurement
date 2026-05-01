@@ -7,7 +7,8 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from app.ml.feature_engineering import P7_FEATURE_COLUMNS, build_p7_features
+from app.ml.feature_contract import EXCLUDED_LEAKAGE_COLUMNS, SAFE_MODEL_FEATURE_COLUMNS, assert_safe_model_features
+from app.ml.feature_engineering import build_p7_features
 from app.repositories import dataset_repository, metric_repository, model_repository, prediction_repository, project_state_repository
 from app.schemas.prediction_schema import PredictionRunRequest, PredictionSingleRequest
 from app.services.audit_service import log_action
@@ -35,21 +36,41 @@ def _active_estimator(model_id: int | None = None):
         return model, None, f"fallback_artifact_unavailable: {exc}"
     if isinstance(artifact_payload, dict) and "estimator" in artifact_payload:
         return model, artifact_payload, MODEL_SOURCE_AI
-    return model, {"estimator": artifact_payload, "feature_columns": P7_FEATURE_COLUMNS}, MODEL_SOURCE_AI
+    return model, {"estimator": artifact_payload, "feature_columns": SAFE_MODEL_FEATURE_COLUMNS}, MODEL_SOURCE_AI
 
 
 def _predict_probabilities(estimator_payload, features: pd.DataFrame):
     if not estimator_payload:
-        return None
+        return None, [], SAFE_MODEL_FEATURE_COLUMNS
     estimator = estimator_payload["estimator"]
     if not hasattr(estimator, "predict_proba"):
         raise ValueError("Active estimator does not support predict_proba")
     metadata = estimator_payload.get("metadata") or {}
-    feature_columns = estimator_payload.get("feature_columns") or metadata.get("feature_columns") or P7_FEATURE_COLUMNS
+    feature_columns = estimator_payload.get("feature_columns") or metadata.get("feature_columns") or SAFE_MODEL_FEATURE_COLUMNS
+    warnings = []
+    if feature_columns != SAFE_MODEL_FEATURE_COLUMNS:
+        message = (
+            "Artifact feature_columns differ from current SAFE_MODEL_FEATURE_COLUMNS. "
+            "Using artifact order for backward-compatible prediction."
+        )
+        logger.warning(message)
+        warnings.append(message)
+        unsafe = [column for column in feature_columns if column in EXCLUDED_LEAKAGE_COLUMNS]
+        if unsafe:
+            message = f"Legacy artifact contains leakage-prone columns: {', '.join(unsafe)}. Retrain production model."
+            logger.warning(message)
+            warnings.append(message)
+    else:
+        assert_safe_model_features(feature_columns)
+    missing = [column for column in feature_columns if column not in features.columns]
+    if missing:
+        message = f"Prediction features missing columns filled with 0: {', '.join(missing)}"
+        logger.warning(message)
+        warnings.append(message)
     X = features.reindex(columns=feature_columns)
     X = X.apply(pd.to_numeric, errors="coerce").fillna(0.0)
     probabilities = estimator.predict_proba(X)[:, 1]
-    return np.clip(probabilities.astype(float), 0.0, 1.0)
+    return np.clip(probabilities.astype(float), 0.0, 1.0), warnings, feature_columns
 
 
 def _threshold(estimator_payload) -> float:
@@ -58,8 +79,12 @@ def _threshold(estimator_payload) -> float:
     try:
         value = float(value)
     except (TypeError, ValueError):
+        logger.warning("Artifact threshold missing or invalid; using default %.2f", DEFAULT_THRESHOLD)
         return DEFAULT_THRESHOLD
-    return value if 0.0 < value < 1.0 else DEFAULT_THRESHOLD
+    if 0.0 < value < 1.0:
+        return value
+    logger.warning("Artifact threshold %.4f out of range; using default %.2f", value, DEFAULT_THRESHOLD)
+    return DEFAULT_THRESHOLD
 
 
 def _prediction_value(probability: float, threshold: float) -> int:
@@ -101,11 +126,14 @@ def predict_single(payload: PredictionSingleRequest):
     features = build_p7_features([payload.model_dump()], use_label_density=False)
     measurement_risk = float(features.iloc[0]["risk_score"])
     ml_probs = None
+    prediction_warnings = list(features.attrs.get("warnings", []))
     try:
-        ml_probs = _predict_probabilities(estimator, features)
+        ml_probs, model_warnings, feature_columns = _predict_probabilities(estimator, features)
+        prediction_warnings.extend(model_warnings)
     except Exception as exc:
         logger.exception("Prediction failed with active model; falling back to measurement risk")
         source = f"fallback_model_error: {exc}"
+        feature_columns = SAFE_MODEL_FEATURE_COLUMNS
     used_active = ml_probs is not None
     threshold = _threshold(estimator) if used_active else DEFAULT_THRESHOLD
     prob = round(float(ml_probs[0]) if used_active else measurement_risk, 4)
@@ -143,6 +171,7 @@ def predict_single(payload: PredictionSingleRequest):
         "id": prediction_id,
         "defect_probability": prob,
         "prediction": predicted,
+        "prediction_label_numeric": predicted,
         "prediction_label": prediction_label(prob),
         "risk_score": measurement_risk,
         "risk_level": risk["name"],
@@ -152,7 +181,8 @@ def predict_single(payload: PredictionSingleRequest):
         "used_fallback": not used_active,
         "fallback_reason": None if used_active else source,
         "threshold": threshold,
-        "warnings": features.attrs.get("warnings", []),
+        "feature_columns": feature_columns,
+        "warnings": prediction_warnings,
         "message": measurement_fallback_message(used_active, source),
     }
 
@@ -163,13 +193,16 @@ def predict_batch(payload: PredictionRunRequest):
     if not metrics:
         raise ValueError("Dataset has no MetricRecords to analyze.")
     features = build_p7_features(pd.DataFrame(metrics), use_label_density=False)
+    prediction_warnings = list(features.attrs.get("warnings", []))
     try:
-        ml_probs = _predict_probabilities(estimator, features)
+        ml_probs, model_warnings, feature_columns = _predict_probabilities(estimator, features)
+        prediction_warnings.extend(model_warnings)
     except Exception as exc:
         logger.exception("Batch prediction failed with active model; falling back to measurement risk")
         estimator = None
         ml_probs = None
         source = f"fallback_model_error: {exc}"
+        feature_columns = SAFE_MODEL_FEATURE_COLUMNS
     prediction_repository.delete_by_dataset(payload.dataset_id)
     rows = []
     results = []
@@ -213,6 +246,7 @@ def predict_batch(payload: PredictionRunRequest):
                 **feature.to_dict(),
                 "defect_probability": prob,
                 "prediction": predicted,
+                "prediction_label_numeric": predicted,
                 "prediction_label": label,
                 "risk_score": float(measurement_risk),
                 "risk_level": risk["name"],
@@ -220,6 +254,7 @@ def predict_batch(payload: PredictionRunRequest):
                 "model_source": model_source,
                 "model_used": model.get("name") if model and used_active else "Measurement-based fallback",
                 "used_fallback": not used_active,
+                "threshold": threshold,
             }
         )
     prediction_repository.insert_predictions(rows)
@@ -241,7 +276,8 @@ def predict_batch(payload: PredictionRunRequest):
         "fallback_reason": None if used_active else source,
         "used_fallback": not used_active,
         "threshold": threshold,
-        "warnings": features.attrs.get("warnings", []),
+        "feature_columns": feature_columns,
+        "warnings": prediction_warnings,
         "message": "Dataset analyzed successfully" if used_active else measurement_fallback_message(False, source),
         "results": results,
         **heatmap_data,

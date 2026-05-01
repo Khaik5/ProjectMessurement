@@ -9,6 +9,7 @@ import Loading from '../components/common/Loading.jsx';
 import SectionHeader from '../components/common/SectionHeader.jsx';
 import StatusBanner from '../components/common/StatusBanner.jsx';
 import SearchBox from '../components/common/SearchBox.jsx';
+import FormField from '../components/common/FormField.jsx';
 import MetricsTable from '../components/tables/MetricsTable.jsx';
 import DatasetUploader from '../components/upload/DatasetUploader.jsx';
 import { datasetService } from '../services/datasetService.js';
@@ -35,8 +36,11 @@ function ValidationPanel({ dataset, validation }) {
   return (
     <div className="page-stack" style={{ gap: 12 }}>
       <div className="dataset-card">
-        <strong>{dataset.file_name || dataset.name}</strong>
-        <span>{fmtNumber(dataset.row_count)} rows - {dataset.status}</span>
+        <div>
+          <strong>{dataset.file_name || dataset.name}</strong>
+          <span>{fmtNumber(dataset.row_count)} rows</span>
+        </div>
+        <span className={`badge ${dataset.status === 'FAILED' ? 'badge-danger' : dataset.status === 'ANALYZED' ? 'badge-success' : 'badge-info'}`}>{dataset.status || 'READY'}</span>
       </div>
       <StatusBanner type={dataset.has_label ? 'success' : 'info'} title={dataset.has_label ? 'Trainable labels detected' : 'Prediction-only dataset'}>
         {dataset.has_label ? 'Ready for model training.' : 'Analysis will use the active model or fallback risk score.'}
@@ -46,7 +50,7 @@ function ValidationPanel({ dataset, validation }) {
         <div className="metric-panel"><strong>{(metadata.optional_columns_detected || []).length}</strong><span>Optional metrics</span></div>
         <div className="metric-panel"><strong>{fmtNumber(dataQuality.duplicated_modules || 0)}</strong><span>Duplicate names</span></div>
       </div>
-      <div className="metric-panel">
+      <div className="metric-panel quality-card">
         <strong>Quality snapshot</strong>
         <span>Missing: {Object.values(missingValues).reduce((sum, value) => sum + Number(value || 0), 0)} fields</span>
         <span>Labels: {JSON.stringify(dataQuality.label_distribution || {})}</span>
@@ -282,10 +286,12 @@ export default function MetricsExplorer() {
         </Card>
         <Card>
           <SectionHeader compact title="Validation" description="Current dataset scope." />
-          <select value={activeDataset?.id || ''} onChange={(event) => selectDataset(event.target.value)}>
-            <option value="">Select dataset...</option>
-            {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>#{dataset.id} - {dataset.file_name || dataset.name}</option>)}
-          </select>
+          <FormField label="Dataset">
+            <select value={activeDataset?.id || ''} onChange={(event) => selectDataset(event.target.value)}>
+              <option value="">Select dataset...</option>
+              {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>#{dataset.id} - {dataset.file_name || dataset.name}</option>)}
+            </select>
+          </FormField>
           <ValidationPanel dataset={activeDataset} validation={validation} />
         </Card>
       </div>

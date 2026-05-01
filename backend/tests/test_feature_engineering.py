@@ -1,5 +1,6 @@
 import pandas as pd
 
+from app.ml.feature_contract import EXCLUDED_LEAKAGE_COLUMNS, SAFE_MODEL_FEATURE_COLUMNS
 from app.ml.feature_engineering import P7_FEATURE_COLUMNS, build_p7_features
 
 
@@ -65,3 +66,12 @@ def test_defect_label_and_defect_count_do_not_leak_by_default():
     assert safe.loc[0, "defect_density"] == 0
     assert label_density.loc[0, "defect_density"] == 1
     assert count_density.loc[0, "defect_density"] == 10
+
+
+def test_safe_model_feature_columns_exclude_leakage_fields():
+    assert "defect_label" not in SAFE_MODEL_FEATURE_COLUMNS
+    assert "prediction_label" not in SAFE_MODEL_FEATURE_COLUMNS
+    assert "defect_count" not in SAFE_MODEL_FEATURE_COLUMNS
+    assert "defect_density" not in SAFE_MODEL_FEATURE_COLUMNS
+    assert "risk_score" not in SAFE_MODEL_FEATURE_COLUMNS
+    assert not set(SAFE_MODEL_FEATURE_COLUMNS).intersection(EXCLUDED_LEAKAGE_COLUMNS)

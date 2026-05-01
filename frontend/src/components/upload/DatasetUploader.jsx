@@ -39,6 +39,11 @@ export default function DatasetUploader({ onUpload, disabled }) {
       <UploadCloud size={34} />
       <strong>Drop metrics file</strong>
       <span>CSV or JSON</span>
+      <div className="upload-chips" aria-hidden="true">
+        <i>schema</i>
+        <i>labels</i>
+        <i>metrics</i>
+      </div>
       {error ? <small className="field-error">{error}</small> : null}
     </label>
   );

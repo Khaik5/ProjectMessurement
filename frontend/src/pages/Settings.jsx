@@ -80,12 +80,18 @@ export default function Settings() {
           <div className="insight-row">
             <div className="metric-panel"><strong>{db?.server_name || '-'}</strong><span>SQL Server</span></div>
             <div className="metric-panel"><strong>{db?.database_name || '-'}</strong><span>Database</span></div>
-            <div className="metric-panel"><strong>{db?.connected === false ? 'Offline' : 'Online'}</strong><span>Status</span></div>
+            <div className="metric-panel">
+              <strong>{db?.connected === false ? 'Offline' : 'Online'}</strong>
+              <span className={`badge ${db?.connected === false ? 'badge-danger' : 'badge-success'}`}>Connection</span>
+            </div>
           </div>
         </Card>
         <Card>
           <SectionHeader compact title="Seed Data" description="Use only for local demo reset." />
-          <Button onClick={seed} loading={loading}>Seed SQL Server</Button>
+          <div className="command-actions" style={{ gridTemplateColumns: '1fr auto' }}>
+            <span className="badge badge-info">SQL Server</span>
+            <Button onClick={seed} loading={loading}>Seed SQL Server</Button>
+          </div>
         </Card>
       </div>
     </div>

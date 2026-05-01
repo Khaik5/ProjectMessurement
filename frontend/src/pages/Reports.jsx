@@ -90,20 +90,25 @@ export default function Reports() {
       <SectionHeader
         eyebrow="Reports"
         title="Exports"
-        description="Generate and export analysis artifacts."
-        actions={(
-          <>
-          <select value={datasetId} onChange={(e) => setDatasetId(e.target.value)}>
+        description="Reports, audit events, and dataset exports."
+      />
+      {message ? <StatusBanner type="info" title="Report status">{message}</StatusBanner> : null}
+      {loading ? <Loading /> : null}
+      <Card className="command-card">
+        <div className="command-main">
+          <span className="eyebrow">Export Control</span>
+          <h3>Generate Report</h3>
+          <p>{datasetId ? `Dataset #${datasetId} selected` : 'Select a dataset to scope exports.'}</p>
+        </div>
+        <div className="command-actions">
+          <select value={datasetId} onChange={(e) => setDatasetId(e.target.value)} aria-label="Dataset">
             <option value="">Select dataset...</option>
             {datasets.map((item) => <option key={item.id} value={item.id}>#{item.id} - {item.file_name || item.name}</option>)}
           </select>
           <Button onClick={generate} loading={loading}><FileText size={18} />Generate</Button>
-          {canDelete ? <Button variant="danger" onClick={deleteSelected}><Trash2 size={18} />Delete Selected</Button> : null}
-          </>
-        )}
-      />
-      {message ? <StatusBanner type="info" title="Report status">{message}</StatusBanner> : null}
-      {loading ? <Loading /> : null}
+          {canDelete ? <Button variant="danger" onClick={deleteSelected} disabled={!selected.length}><Trash2 size={18} />Delete</Button> : null}
+        </div>
+      </Card>
       <div className="kpi-grid">
         <KpiCard label="Reports" value={reports.length} />
         <KpiCard label="Datasets" value={datasets.length} />
@@ -114,9 +119,15 @@ export default function Reports() {
         <Card><SectionHeader compact title="Generated Reports" /><ReportsTable rows={reports} selected={selected} onSelect={setSelected} selectable={canDelete} /></Card>
         <Card>
           <SectionHeader compact title="Dataset Export" description="Selected dataset only." />
-          <div className="export-list">
+          <div className="export-grid">
             {['pdf', 'xlsx', 'csv'].map((type) => (
-              canExport ? <Button key={type} variant="secondary" onClick={() => download(type)}><Download size={16} />Export {type.toUpperCase()}</Button> : null
+              canExport ? (
+                <button key={type} className="action-card" onClick={() => download(type)} disabled={!datasetId}>
+                  <Download size={19} />
+                  <strong>{type.toUpperCase()}</strong>
+                  <span>Export selected dataset</span>
+                </button>
+              ) : null
             ))}
           </div>
         </Card>
