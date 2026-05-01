@@ -7,6 +7,8 @@ import Button from '../components/common/Button.jsx';
 import Card from '../components/common/Card.jsx';
 import EmptyState from '../components/common/EmptyState.jsx';
 import Loading from '../components/common/Loading.jsx';
+import SectionHeader from '../components/common/SectionHeader.jsx';
+import StatusBanner from '../components/common/StatusBanner.jsx';
 import AlertPanel from '../components/dashboard/AlertPanel.jsx';
 import KpiCard from '../components/dashboard/KpiCard.jsx';
 import RiskSummary from '../components/dashboard/RiskSummary.jsx';
@@ -114,12 +116,12 @@ export default function Dashboard() {
   if (!error && !hasDataset) {
     return (
       <motion.div className="page-stack" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <section className="hero-card">
-          <span>System Measurement & Analysis</span>
-          <h2>AI Software Defect Dashboard</h2>
-          <p>Upload a CSV in Metrics Explorer, then run analysis to populate this dashboard.</p>
-        </section>
-        <EmptyState title="No dataset selected" description="Upload a dataset and analyze it, or open a dataset from History." />
+        <SectionHeader
+          eyebrow="Overview"
+          title="Quality Intelligence"
+          description="Select an analyzed dataset to view risk, model output, and module health."
+        />
+        <EmptyState title="No dataset selected" description="Open a dataset from History or run analysis from Datasets." />
       </motion.div>
     );
   }
@@ -127,61 +129,58 @@ export default function Dashboard() {
   return (
     <motion.div className="page-stack" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <section className="hero-card">
-        <span>System Measurement & Analysis</span>
-        <h2>AI Software Defect Dashboard</h2>
-        <p>Predict defect-prone software modules from LOC, complexity, coupling, and code churn metrics.</p>
+        <div>
+          <span>AI Analytics</span>
+          <h2>{summary?.dataset_name || `Dataset #${datasetId}`}</h2>
+          <p>{summary?.used_fallback ? 'Measurement fallback active' : (summary?.active_model_name || 'Production model')}</p>
+        </div>
+        <div className="hero-metric">
+          <small>Avg defect probability</small>
+          <strong>{fmtPercent(summary?.avg_defect_probability)}</strong>
+        </div>
       </section>
 
       <Card>
-        <div className="section-header">
-          <div>
-            <h3>Viewing Analysis: {summary?.dataset_name || `Dataset #${datasetId}`}</h3>
-            <p className="muted">
-              Model source: {summary?.used_fallback ? 'Measurement fallback' : (summary?.active_model_name || 'AI production model')}
-            </p>
-          </div>
-          <div className="button-row">
+        <SectionHeader
+          compact
+          title="Analysis"
+          description={summary?.analysis_status === 'ANALYZED' ? `${fmtNumber(summary?.prediction_count)} predictions loaded` : summary?.message}
+          actions={(
+            <>
             <select value={datasetId || ''} onChange={(event) => switchDataset(event.target.value)}>
               {history.map((item) => <option key={item.id} value={item.id}>#{item.id} - {item.file_name || item.name}</option>)}
             </select>
             <Button variant="secondary" onClick={load}>Refresh</Button>
             <Button onClick={runAnalysisForCurrent}><Play size={18} />Run New Analysis</Button>
-          </div>
-        </div>
+            </>
+          )}
+        />
       </Card>
 
       {error ? (
-        <div style={{ marginTop: 16 }}>
-          <EmptyState title="Backend or SQL Server unavailable" description={error} />
-          <div style={{ marginTop: 12, display: 'flex', gap: 12 }}>
-            <Button onClick={load}>Retry</Button>
-          </div>
-        </div>
+        <StatusBanner type="error" title="Dashboard unavailable" action={<Button variant="secondary" onClick={load}>Retry</Button>}>
+          {error}
+        </StatusBanner>
       ) : null}
 
       <div className="kpi-grid">
         <KpiCard
+          tone="teal"
           label="Total Modules"
           value={fmtNumber(summary?.total_modules)}
-          helper="Modules in current dataset"
+          helper="Current dataset"
           icon={Layers3}
         />
-        <KpiCard label="No Defect" value={fmtNumber(summary?.no_defect_count)} helper="Prediction label: No Defect" icon={Layers3} />
-        <KpiCard label="High Risk" value={fmtNumber(summary?.high_risk_count)} helper="HIGH + CRITICAL predictions" icon={AlertTriangle} />
-        <KpiCard label="Avg Defect Probability" value={fmtPercent(summary?.avg_defect_probability)} helper="Current analysis average" icon={TrendingUp} />
-        <KpiCard label="Active Model Accuracy" value={fmtPercent(summary?.active_model_accuracy)} helper={summary?.active_model_name || 'No active model'} icon={BrainCircuit} />
+        <KpiCard label="Datasets" value={fmtNumber(history.length)} helper="Available history" icon={Layers3} />
+        <KpiCard tone="danger" label="High Risk" value={fmtNumber(summary?.high_risk_count)} helper="HIGH + CRITICAL" icon={AlertTriangle} />
+        <KpiCard tone="warning" label="Avg Probability" value={fmtPercent(summary?.avg_defect_probability)} helper="Defect likelihood" icon={TrendingUp} />
+        <KpiCard label="Model Accuracy" value={fmtPercent(summary?.active_model_accuracy)} helper={summary?.active_model_name || 'No model'} icon={BrainCircuit} />
       </div>
 
       {needsAnalysis ? (
-        <Card>
-          <div className="section-header">
-            <div>
-              <h3>{summary?.message || 'Dataset uploaded but not analyzed yet'}</h3>
-              <p className="muted">Run analysis to generate results for this dataset.</p>
-            </div>
-            <Button onClick={runAnalysisForCurrent}><Play size={18} />Analyze now</Button>
-          </div>
-        </Card>
+        <StatusBanner type="warning" title="Dataset not analyzed" action={<Button onClick={runAnalysisForCurrent}><Play size={18} />Analyze</Button>}>
+          Run analysis to generate probabilities, labels, and heatmap data.
+        </StatusBanner>
       ) : null}
 
       <div className="grid-2">

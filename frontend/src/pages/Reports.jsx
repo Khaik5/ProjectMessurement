@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Button from '../components/common/Button.jsx';
 import Card from '../components/common/Card.jsx';
 import Loading from '../components/common/Loading.jsx';
+import SectionHeader from '../components/common/SectionHeader.jsx';
+import StatusBanner from '../components/common/StatusBanner.jsx';
 import AuditLogTable from '../components/tables/AuditLogTable.jsx';
 import ReportsTable from '../components/tables/ReportsTable.jsx';
 import KpiCard from '../components/dashboard/KpiCard.jsx';
@@ -11,6 +13,7 @@ import { reportService } from '../services/reportService.js';
 import axiosClient from '../api/axiosClient.js';
 import { datasetService } from '../services/datasetService.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { unwrapApi } from '../services/apiUtils.js';
 
 const projectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID || 1);
 
@@ -29,7 +32,7 @@ export default function Reports() {
     try {
       const [reportData, logData, historyData] = await Promise.all([
         reportService.list(projectId),
-        axiosClient.get(`/audit-logs/project/${projectId}`).then((res) => res.data),
+        axiosClient.get(`/audit-logs/project/${projectId}`).then(unwrapApi),
         datasetService.history(projectId)
       ]);
       setReports(reportData);
@@ -84,30 +87,33 @@ export default function Reports() {
 
   return (
     <div className="page-stack">
-      <div className="section-header">
-        <h2>Reports & Analysis</h2>
-        <div className="button-row">
+      <SectionHeader
+        eyebrow="Reports"
+        title="Exports"
+        description="Generate and export analysis artifacts."
+        actions={(
+          <>
           <select value={datasetId} onChange={(e) => setDatasetId(e.target.value)}>
             <option value="">Select dataset...</option>
             {datasets.map((item) => <option key={item.id} value={item.id}>#{item.id} - {item.file_name || item.name}</option>)}
           </select>
-          <Button onClick={generate}><FileText size={18} />Generate Report</Button>
+          <Button onClick={generate} loading={loading}><FileText size={18} />Generate</Button>
           {canDelete ? <Button variant="danger" onClick={deleteSelected}><Trash2 size={18} />Delete Selected</Button> : null}
-        </div>
-      </div>
-      {message ? <p className="notice">{message}</p> : null}
+          </>
+        )}
+      />
+      {message ? <StatusBanner type="info" title="Report status">{message}</StatusBanner> : null}
       {loading ? <Loading /> : null}
       <div className="kpi-grid">
-        <KpiCard label="Total Analysis" value={reports.length} />
-        <KpiCard label="Avg Risk Score" value={reports[0]?.summary_json ? 'SQL' : '-'} />
-        <KpiCard label="Defects Detected" value={logs.filter((log) => log.action?.includes('prediction')).length} />
-        <KpiCard label="Accuracy Rate" value={reports.length ? 'Available' : '-'} />
+        <KpiCard label="Reports" value={reports.length} />
+        <KpiCard label="Datasets" value={datasets.length} />
+        <KpiCard label="Prediction Events" value={logs.filter((log) => log.action?.includes('prediction')).length} />
+        <KpiCard label="Selected Dataset" value={datasetId || '-'} />
       </div>
       <div className="grid-2">
-        <Card><h3>Historical Analysis Logs</h3><ReportsTable rows={reports} selected={selected} onSelect={setSelected} selectable={canDelete} /></Card>
+        <Card><SectionHeader compact title="Generated Reports" /><ReportsTable rows={reports} selected={selected} onSelect={setSelected} selectable={canDelete} /></Card>
         <Card>
-          <h3>Export Analysis</h3>
-          <p className="muted">Exports use the selected dataset only.</p>
+          <SectionHeader compact title="Dataset Export" description="Selected dataset only." />
           <div className="export-list">
             {['pdf', 'xlsx', 'csv'].map((type) => (
               canExport ? <Button key={type} variant="secondary" onClick={() => download(type)}><Download size={16} />Export {type.toUpperCase()}</Button> : null
@@ -115,7 +121,7 @@ export default function Reports() {
           </div>
         </Card>
       </div>
-      <Card><h3>System Audit Log</h3><AuditLogTable rows={logs} /></Card>
+      <Card><SectionHeader compact title="Audit Log" /><AuditLogTable rows={logs} /></Card>
     </div>
   );
 }

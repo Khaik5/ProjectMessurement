@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import Header from '../components/layout/Header.jsx';
 import Sidebar from '../components/layout/Sidebar.jsx';
@@ -21,7 +22,18 @@ export default function MainLayout() {
       <div className="main-region">
         <Header pathname={location.pathname} />
         <main className="page-content">
-          <Outlet />
+          <AnimatePresence mode="wait">
+            <motion.div
+              className="page-frame"
+              key={location.pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
         <Toast message={toast?.message} type={toast?.type || 'info'} onClose={() => setToast(null)} />
       </div>

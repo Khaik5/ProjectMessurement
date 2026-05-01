@@ -6,6 +6,8 @@ import Button from '../components/common/Button.jsx';
 import Card from '../components/common/Card.jsx';
 import EmptyState from '../components/common/EmptyState.jsx';
 import Loading from '../components/common/Loading.jsx';
+import SectionHeader from '../components/common/SectionHeader.jsx';
+import StatusBanner from '../components/common/StatusBanner.jsx';
 import { historyService } from '../services/historyService.js';
 import { fmtNumber, fmtPercent } from '../utils/formatters.js';
 
@@ -15,6 +17,7 @@ export default function History() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState(null);
   const navigate = useNavigate();
 
   async function load() {
@@ -42,30 +45,43 @@ export default function History() {
   }
 
   async function reanalyze(datasetId) {
-    await historyService.reanalyze(datasetId, projectId);
-    await viewDashboard(datasetId);
+    setBusyId(datasetId);
+    try {
+      await historyService.reanalyze(datasetId, projectId);
+      await viewDashboard(datasetId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function archive(datasetId) {
     const ok = window.confirm(`Archive dataset #${datasetId}? (MetricRecords/Predictions will be kept)`);
     if (!ok) return;
-    await historyService.archive(datasetId);
-    await load();
+    setBusyId(datasetId);
+    try {
+      await historyService.archive(datasetId);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   if (loading) return <Loading label="Loading dataset history..." />;
 
   return (
     <div className="page-stack">
-      <div className="section-header">
-        <div>
-          <h2>History</h2>
-          <p className="muted">All uploaded/analyzed datasets. Actions are applied per dataset to avoid mixing results.</p>
-        </div>
-        <Button onClick={load} variant="secondary"><RefreshCw size={18} />Refresh</Button>
-      </div>
+      <SectionHeader
+        eyebrow="Datasets"
+        title="History"
+        description={`${fmtNumber(items.length)} datasets tracked`}
+        actions={<Button onClick={load} variant="secondary"><RefreshCw size={18} />Refresh</Button>}
+      />
 
-      {error ? <EmptyState title="Backend or SQL Server unavailable" description={error} /> : null}
+      {error ? <StatusBanner type="error" title="History unavailable">{error}</StatusBanner> : null}
 
       {!items.length ? (
         <EmptyState title="No datasets yet" description="Upload a CSV in Metrics Explorer to start." />
@@ -102,11 +118,13 @@ export default function History() {
                     <td>{fmtNumber(d.high_risk_count)}</td>
                     <td>{fmtNumber(d.critical_count)}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <Button variant="secondary" onClick={() => viewDashboard(d.id)}><Eye size={18} />View Dashboard</Button>{' '}
-                      <Button variant="secondary" onClick={() => viewMetrics(d.id)}><FileBarChart2 size={18} />View Metrics</Button>{' '}
-                      <Button variant="secondary" onClick={() => reanalyze(d.id)}><RefreshCw size={18} />Re-analyze</Button>{' '}
-                      <a className="btn btn-secondary" href={`${import.meta.env.VITE_API_BASE_URL}/datasets/${d.id}/export/xlsx`}><Download size={18} />Export Excel</a>{' '}
-                      <Button variant="danger" onClick={() => archive(d.id)}><Trash2 size={18} />Archive</Button>
+                      <div className="row-actions">
+                        <Button variant="secondary" onClick={() => viewDashboard(d.id)}><Eye size={18} />Dashboard</Button>
+                        <Button variant="secondary" onClick={() => viewMetrics(d.id)}><FileBarChart2 size={18} />Metrics</Button>
+                        <Button variant="secondary" loading={busyId === d.id} onClick={() => reanalyze(d.id)}><RefreshCw size={18} />Analyze</Button>
+                        <a className="btn btn-secondary" href={`${import.meta.env.VITE_API_BASE_URL}/datasets/${d.id}/export/xlsx`}><Download size={18} />Excel</a>
+                        <Button variant="danger" onClick={() => archive(d.id)} disabled={busyId === d.id}><Trash2 size={18} />Archive</Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

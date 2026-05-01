@@ -7,7 +7,7 @@ const API_BASE_URL =
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 45000,
 });
 
 axiosClient.interceptors.request.use((config) => {
@@ -27,10 +27,13 @@ axiosClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    const isTimeout = error.code === "ECONNABORTED";
     const networkMessage =
       error.message === "Network Error"
-        ? `Cannot reach backend API at ${API_BASE_URL}. Check uvicorn, SQL Server connection, and CORS.`
-        : error.message;
+        ? `Cannot reach backend API at ${API_BASE_URL}.`
+        : isTimeout
+          ? "The backend is taking longer than expected."
+          : error.message;
     const message =
       error.response?.data?.message ||
       error.response?.data?.detail ||
@@ -41,7 +44,7 @@ axiosClient.interceptors.response.use(
       window.dispatchEvent(new CustomEvent("defectai:logout"));
     }
     if (error.response?.status === 403) {
-      window.dispatchEvent(new CustomEvent("defectai:toast", { detail: { message: "Bạn không có quyền thực hiện chức năng này.", type: "error" } }));
+      window.dispatchEvent(new CustomEvent("defectai:toast", { detail: { message: "You do not have permission for this action.", type: "error" } }));
     }
 
     return Promise.reject({

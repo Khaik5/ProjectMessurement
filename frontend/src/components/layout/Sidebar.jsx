@@ -6,12 +6,12 @@ import { useRole } from '../../auth/useRole.js';
 
 const nav = [
   ['/dashboard', 'Dashboard', LayoutDashboard, 'DASHBOARD_VIEW', null],
-  ['/metrics', 'Metrics Explorer', UploadCloud, ['DATASET_UPLOAD', 'DASHBOARD_VIEW'], ['Admin', 'Developer']], // Viewer không xem được
-  ['/models', 'AI Models', BrainCircuit, ['MODEL_TRAIN', 'MODEL_COMPARISON_VIEW'], ['Admin', 'Developer']], // Viewer không xem được
+  ['/metrics', 'Datasets', UploadCloud, ['DATASET_UPLOAD', 'DASHBOARD_VIEW'], ['Admin', 'Developer']],
+  ['/models', 'Models', BrainCircuit, ['MODEL_TRAIN', 'MODEL_COMPARISON_VIEW'], ['Admin', 'Developer']],
   ['/history', 'History', Clock, 'HISTORY_VIEW', null],
   ['/reports', 'Reports', FileText, 'REPORT_VIEW', null],
   ['/settings', 'Settings', Settings, 'SYSTEM_SETTING', null],
-  ['/users', 'Users', Users, 'USER_MANAGE', ['Admin']] // Chỉ Admin mới xem được
+  ['/users', 'Users', Users, 'USER_MANAGE', ['Admin']]
 ];
 
 export default function Sidebar() {
@@ -27,18 +27,16 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <BarChart3 />
+        <span className="brand-mark"><BarChart3 size={21} /></span>
         <div>
           <strong>DefectAI</strong>
-          <span>AI Software Monitoring</span>
+          <span>Quality analytics</span>
         </div>
       </div>
       <nav>
         {nav
           .filter(([, , , permission, allowedRoles]) => {
-            // Kiểm tra permission
             if (!hasPermission(permission)) return false;
-            // Kiểm tra role nếu có
             if (allowedRoles && !hasRole(allowedRoles)) return false;
             return true;
           })
@@ -49,7 +47,7 @@ export default function Sidebar() {
             </NavLink>
           ))}
       </nav>
-      <button className="logout" onClick={signOut}><LogOut size={20} />Log Out</button>
+      <button className="logout" onClick={signOut}><LogOut size={20} />Sign out</button>
     </aside>
   );
 }

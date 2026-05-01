@@ -1,6 +1,7 @@
-export default function Button({ children, variant = 'primary', ...props }) {
+export default function Button({ children, variant = 'primary', loading = false, className = '', ...props }) {
   return (
-    <button className={`btn btn-${variant}`} {...props}>
+    <button {...props} className={`btn btn-${variant} ${loading ? 'is-loading' : ''} ${className}`} disabled={loading || props.disabled}>
+      {loading ? <span className="btn-spinner" aria-hidden="true" /> : null}
       {children}
     </button>
   );

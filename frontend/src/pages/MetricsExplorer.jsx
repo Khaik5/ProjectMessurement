@@ -6,6 +6,8 @@ import Button from '../components/common/Button.jsx';
 import Card from '../components/common/Card.jsx';
 import EmptyState from '../components/common/EmptyState.jsx';
 import Loading from '../components/common/Loading.jsx';
+import SectionHeader from '../components/common/SectionHeader.jsx';
+import StatusBanner from '../components/common/StatusBanner.jsx';
 import SearchBox from '../components/common/SearchBox.jsx';
 import MetricsTable from '../components/tables/MetricsTable.jsx';
 import DatasetUploader from '../components/upload/DatasetUploader.jsx';
@@ -36,19 +38,18 @@ function ValidationPanel({ dataset, validation }) {
         <strong>{dataset.file_name || dataset.name}</strong>
         <span>{fmtNumber(dataset.row_count)} rows - {dataset.status}</span>
       </div>
-      <div className={dataset.has_label ? 'success-panel' : 'warning-panel'}>
-        {dataset.has_label ? 'Has defect_label: can train production model and analyze.' : 'No defect_label: prediction will use the active production model or measurement fallback.'}
+      <StatusBanner type={dataset.has_label ? 'success' : 'info'} title={dataset.has_label ? 'Trainable labels detected' : 'Prediction-only dataset'}>
+        {dataset.has_label ? 'Ready for model training.' : 'Analysis will use the active model or fallback risk score.'}
+      </StatusBanner>
+      <div className="insight-row">
+        <div className="metric-panel"><strong>{(metadata.required_columns || []).length || 5}</strong><span>Required columns</span></div>
+        <div className="metric-panel"><strong>{(metadata.optional_columns_detected || []).length}</strong><span>Optional metrics</span></div>
+        <div className="metric-panel"><strong>{fmtNumber(dataQuality.duplicated_modules || 0)}</strong><span>Duplicate names</span></div>
       </div>
-      <div className="step-grid">
-        <div className="step-card"><strong>Required columns</strong><span>{(metadata.required_columns || []).join(', ') || 'module_name, loc, complexity, coupling, code_churn'}</span></div>
-        <div className="step-card"><strong>Optional detected</strong><span>{(metadata.optional_columns_detected || []).join(', ') || 'None'}</span></div>
-        <div className="step-card"><strong>Missing columns</strong><span>{(metadata.missing_columns || []).join(', ') || 'None'}</span></div>
-        <div className="step-card"><strong>Duplicated modules</strong><span>{fmtNumber(dataQuality.duplicated_modules || 0)}</span></div>
-      </div>
-      <div className="step-card">
-        <strong>Data quality</strong>
-        <span>Missing values: {Object.entries(missingValues).map(([key, value]) => `${key}=${value}`).join(', ') || '0'}</span>
-        <span style={{ display: 'block', marginTop: 4 }}>Label distribution: {JSON.stringify(dataQuality.label_distribution || {})}</span>
+      <div className="metric-panel">
+        <strong>Quality snapshot</strong>
+        <span>Missing: {Object.values(missingValues).reduce((sum, value) => sum + Number(value || 0), 0)} fields</span>
+        <span>Labels: {JSON.stringify(dataQuality.label_distribution || {})}</span>
       </div>
     </div>
   );
@@ -267,27 +268,20 @@ export default function MetricsExplorer() {
 
   return (
     <div className="page-stack">
-      <div className="step-grid">
-        <div className="step-card"><strong>1. Upload Dataset</strong><span>CSV/JSON metrics from SQL Server upload API.</span></div>
-        <div className="step-card"><strong>2. Validate</strong><span>Required columns, optional metrics, quality checks.</span></div>
-        <div className="step-card"><strong>3. Measurement</strong><span>Fixed P7 risk score from LOC, complexity, coupling, churn.</span></div>
-        <div className="step-card"><strong>4. AI Prediction</strong><span>Production model or measurement fallback.</span></div>
-      </div>
+      <SectionHeader
+        eyebrow="Datasets"
+        title="Data Pipeline"
+        description="Upload metrics, validate schema, then train or analyze."
+        actions={<Button variant="secondary" onClick={load} disabled={loading || Boolean(processing)}><RefreshCw size={18} />Refresh</Button>}
+      />
 
       <div className="grid-2">
         <Card>
-          <h3>Step 1: Upload Dataset</h3>
-          <p className="muted">Required: module_name, loc, complexity, coupling, code_churn. Optional: defect_label for training.</p>
+          <SectionHeader compact title="Upload" description="CSV or JSON metrics." />
           {canUpload ? <DatasetUploader onUpload={upload} disabled={loading || Boolean(processing)} /> : <EmptyState title="Read-only access" description="You can view metrics and predictions for existing analyses." />}
         </Card>
         <Card>
-          <div className="section-header">
-            <div>
-              <h3>Step 2: Dataset Validation</h3>
-              <p className="muted">Selected analysis is scoped to one dataset only.</p>
-            </div>
-            <Button variant="secondary" onClick={load} disabled={loading || Boolean(processing)}><RefreshCw size={18} />Refresh</Button>
-          </div>
+          <SectionHeader compact title="Validation" description="Current dataset scope." />
           <select value={activeDataset?.id || ''} onChange={(event) => selectDataset(event.target.value)}>
             <option value="">Select dataset...</option>
             {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>#{dataset.id} - {dataset.file_name || dataset.name}</option>)}
@@ -302,38 +296,38 @@ export default function MetricsExplorer() {
           <div className="progress-bar" style={{ marginTop: 12 }}><div /></div>
         </Card>
       ) : null}
-      {message ? <div className="success-panel">{message}</div> : null}
-      {error ? <div className="warning-panel">{error}</div> : null}
+      {message ? <StatusBanner type="success" title="Ready">{message}</StatusBanner> : null}
+      {error ? <StatusBanner type="error" title="Action failed">{error}</StatusBanner> : null}
       {loading ? <Loading /> : null}
 
       <Card>
-        <div className="section-header">
-          <div>
-            <h3>Step 3: Measurement Metrics Preview</h3>
-            <p className="muted">Preview rows are loaded from /api/datasets/{activeDataset?.id || '{dataset_id}'}/preview.</p>
-          </div>
-          <div className="button-row">
+        <SectionHeader
+          compact
+          title="Metrics"
+          description={activeDataset ? `${fmtNumber(previewRows.length)} preview rows` : 'No dataset selected'}
+          actions={(
+            <>
             {activeDataset?.has_label && canTrain ? <Button variant="secondary" onClick={trainProduction} disabled={Boolean(processing)}><Rocket size={18} />Train Production Model</Button> : null}
             {canAnalyze ? <Button onClick={analyze} disabled={!activeDataset || Boolean(processing)}><PlayCircle size={18} />Analyze Dataset</Button> : null}
-          </div>
-        </div>
+            </>
+          )}
+        />
         {!activeDataset ? <EmptyState title="No dataset selected" /> : <MetricsTable rows={preview} />}
       </Card>
 
       <Card>
-        <div className="section-header">
-          <div>
-            <h3>Step 4: AI Prediction Output</h3>
-            <p className="muted">
-              Active model: {activeModel?.name || 'No active production model. Analyze will use measurement fallback.'}
-            </p>
-          </div>
-          <div className="button-row">
+        <SectionHeader
+          compact
+          title="Predictions"
+          description={activeModel?.name || 'Measurement fallback available'}
+          actions={(
+            <>
             {canExport ? <Button variant="secondary" onClick={() => download('csv')}><Download size={16} />CSV</Button> : null}
             {canExport ? <Button variant="secondary" onClick={() => download('xlsx')}><Download size={16} />XLSX</Button> : null}
             <Button variant="secondary" onClick={() => activeDataset && navigate(`/dashboard?datasetId=${activeDataset.id}`)}><Eye size={18} />View Dashboard</Button>
-          </div>
-        </div>
+            </>
+          )}
+        />
         <div className="filters">
           <SearchBox value={query} onChange={setQuery} />
           <select value={risk} onChange={(e) => setRisk(e.target.value)}><option value="ALL">All Risk</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select>
@@ -347,7 +341,7 @@ export default function MetricsExplorer() {
               </div>
             ) : (
               <div className="warning-panel" style={{ marginBottom: 12 }}>
-                Dataset has not been analyzed yet. Click Analyze Dataset to create prediction labels and risk levels.
+                Dataset has not been analyzed yet.
               </div>
             )}
             <MetricsTable rows={visiblePredictions} />

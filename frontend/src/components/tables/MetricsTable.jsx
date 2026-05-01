@@ -53,7 +53,16 @@ export default function MetricsTable({ rows = [] }) {
                 <td>{fmtPercent(row.churn_score)}</td>
                 <td>{fmtPercent(row.risk_score)}</td>
                 {hasPredictions ? <td><span className={`badge ${predictionClass(label)}`}>{label}</span></td> : null}
-                {hasPredictions ? <td>{row.defect_probability !== undefined ? fmtPercent(row.defect_probability) : '-'}</td> : null}
+                {hasPredictions ? (
+                  <td>
+                    {row.defect_probability !== undefined ? (
+                      <div className="probability-cell">
+                        <span>{fmtPercent(row.defect_probability)}</span>
+                        <div><i style={{ width: `${Math.min(Math.max(Number(row.defect_probability || 0), 0), 1) * 100}%` }} /></div>
+                      </div>
+                    ) : '-'}
+                  </td>
+                ) : null}
                 {hasPredictions ? <td><Badge level={level}>{level}</Badge></td> : null}
                 {hasPredictions ? <td>{row.model_source || row.model_used || (row.model_id ? 'AI production model' : 'Measurement fallback')}</td> : null}
                 <td>{fmtDate(row.created_at || row.timestamp || row.recorded_at)}</td>

@@ -3,9 +3,9 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 
 const titles = {
   '/dashboard': 'Dashboard',
-  '/metrics': 'Metrics Explorer',
-  '/models': 'AI Model Management',
-  '/reports': 'Reports & Analysis',
+  '/metrics': 'Datasets',
+  '/models': 'Models',
+  '/reports': 'Reports',
   '/settings': 'Settings',
   '/users': 'Users',
   '/register': 'Create Account',
@@ -14,14 +14,18 @@ const titles = {
 
 export default function Header({ pathname }) {
   const { user } = useAuth();
+  const title = titles[pathname] || 'DefectAI';
   return (
     <header className="topbar">
-      <h1>{titles[pathname] || 'DefectAI'}</h1>
+      <div className="topbar-title">
+        <span>DefectAI Platform</span>
+        <h1>{title}</h1>
+      </div>
       <div className="top-actions">
-        <div className="project-pill">Project Selection</div>
-        <label className="header-search"><Search size={16} /><input placeholder="Search modules..." /></label>
-        <Bell size={22} />
-        <CircleHelp size={22} />
+        <div className="project-pill">Project #{import.meta.env.VITE_DEFAULT_PROJECT_ID || 1}</div>
+        <label className="header-search"><Search size={16} /><input placeholder="Search" /></label>
+        <span className="header-icon"><Bell size={18} /></span>
+        <span className="header-icon"><CircleHelp size={18} /></span>
         <div className="user-pill"><UserCircle size={28} /><span>{user?.username}</span></div>
       </div>
     </header>

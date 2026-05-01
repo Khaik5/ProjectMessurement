@@ -1,17 +1,53 @@
+.heatmap-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.heatmap-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.heatmap-summary span, .heatmap-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+.legend-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
+.dot-low { background: var(--success); }
+.dot-medium { background: var(--amber); }
+.dot-high { background: var(--orange); }
+.dot-critical { background: var(--danger); }
+.heatmap-legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.heatmap-legend button { cursor: pointer; background: #fff; }
+.matrix-wrap { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
+.matrix-row { display: grid; grid-template-columns: minmax(180px, 1.45fr) repeat(5, minmax(112px, 1fr)); gap: 8px; align-items: center; }
+.matrix-row > strong, .matrix-row > span { min-height: 39px; display: flex; align-items: center; padding: 8px 10px; border-radius: 10px; }
+.matrix-row > strong { background: #fff; border: 1px solid var(--line-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matrix-head > span { background: #f8fafc; color: #475569; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+.heat-cell { justify-content: center; font-weight: 900; border: 1px solid transparent; cursor: default; transition: transform .16s ease, box-shadow .16s ease; }
+.matrix-row > .heat-cell { min-height: 39px; flex-direction: row; }
+.heat-cell:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.chart-tooltip {
+  position: fixed;
+  z-index: 35;
+  pointer-events: none;
+  width: 250px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: 12px;
+  color: var(--ink-soft);
+}
+.chart-tooltip strong { display: block; color: var(--ink); margin-bottom: 8px; }
+.chart-tooltip dl { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; margin: 0; font-size: 12px; }
+.chart-tooltip dt { color: var(--muted); }
+.chart-tooltip dd { margin: 0; font-weight: 850; color: var(--ink); }
 .heatmap-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.heat-cell { min-height: 78px; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid transparent; }
-.heat-cell strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.heat-cell span { font-weight: 950; }
 .matrix-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.matrix-grid div { min-height: 110px; border-radius: 10px; background: linear-gradient(135deg, #ff7a00, #c1121f); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.matrix-grid div { min-height: 110px; border-radius: 12px; background: #111827; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .matrix-grid span { font-weight: 900; }
 .matrix-grid strong { font-size: 34px; }
 @media (max-width: 900px) {
   .heatmap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.matrix-wrap { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
-.matrix-row { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(5, minmax(120px, 1fr)); gap: 8px; align-items: center; }
-.matrix-row > strong, .matrix-row > span { min-height: 38px; display: flex; align-items: center; padding: 8px 10px; border-radius: 10px; }
-.matrix-head > span { background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
-.heat-cell { justify-content: center; font-weight: 900; border: 1px solid transparent; }
-.matrix-row > .heat-cell { min-height: 38px; flex-direction: row; }

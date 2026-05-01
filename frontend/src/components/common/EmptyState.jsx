@@ -1,8 +1,16 @@
-export default function EmptyState({ title = 'No analysis selected', description = 'Upload a dataset and run analysis to view results.' }) {
+import { Inbox } from 'lucide-react';
+
+export default function EmptyState({
+  title = 'No data',
+  description = 'Run an action to populate this view.',
+  action = null
+}) {
   return (
     <div className="empty-state">
+      <div className="empty-icon"><Inbox size={22} /></div>
       <strong>{title}</strong>
-      <p>{description}</p>
+      {description ? <p>{description}</p> : null}
+      {action ? <div className="empty-action">{action}</div> : null}
     </div>
   );
 }
