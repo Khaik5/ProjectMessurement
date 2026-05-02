@@ -26,3 +26,25 @@ backend/pytest-tmp/
 Thumbs.db
 .idea/
 .vscode/
+
+# Agent/spec workspace files
+.kiro/
+
+# Python cache/test artifacts
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+pytest-tmp/
+
+# Node/frontend artifacts
+build/
+coverage/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+logs/
