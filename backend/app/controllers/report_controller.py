@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 
-from app.schemas.report_schema import ReportGenerateRequest
+from app.schemas.report_schema import ReportExportRequest, ReportGenerateRequest
 from app.services import export_service, report_service
 
 
@@ -19,16 +19,27 @@ def generate(payload: ReportGenerateRequest):
     return report_service.generate(payload)
 
 
-def export_pdf(report_id: int):
-    return export_service.report_pdf(report_id)
+def export_options(payload: ReportExportRequest | None = None):
+    if payload is None:
+        return export_service.ExportOptions()
+    return export_service.ExportOptions(
+        include_full_modules=payload.include_full_modules,
+        include_heatmap=payload.include_heatmap,
+        include_charts=payload.include_charts,
+        top_n=payload.top_n,
+    )
+
+
+def export_pdf(report_id: int, options: export_service.ExportOptions | None = None):
+    return export_service.report_pdf(report_id, options)
 
 
 def export_csv(report_id: int):
     return export_service.report_csv(report_id)
 
 
-def export_xlsx(report_id: int):
-    return export_service.report_xlsx(report_id)
+def export_xlsx(report_id: int, options: export_service.ExportOptions | None = None):
+    return export_service.report_xlsx(report_id, options)
 
 
 def delete(report_id: int, user_id: int | None = None):
@@ -44,13 +55,17 @@ def export_multiple(report_ids: list[int], format: str = "csv"):
     return export_service.export_multiple_reports(report_ids, format)
 
 
-def export_dataset_pdf(dataset_id: int):
-    return export_service.dataset_pdf(dataset_id)
+def export_dataset_pdf(dataset_id: int, options: export_service.ExportOptions | None = None):
+    return export_service.dataset_pdf(dataset_id, options)
 
 
 def export_dataset_csv(dataset_id: int):
     return export_service.dataset_csv(dataset_id)
 
 
-def export_dataset_xlsx(dataset_id: int):
-    return export_service.dataset_xlsx(dataset_id)
+def export_dataset_xlsx(dataset_id: int, options: export_service.ExportOptions | None = None):
+    return export_service.dataset_xlsx(dataset_id, options)
+
+
+def export_dataset_filename(dataset_id: int, extension: str):
+    return export_service.export_filename(dataset_id, extension)

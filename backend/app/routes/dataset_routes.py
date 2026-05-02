@@ -49,6 +49,11 @@ def analysis_summary(dataset_id: int):
     return api_success(dataset_controller.analysis_summary(dataset_id))
 
 
+@router.get("/{dataset_id}/quality-summary")
+def quality_summary(dataset_id: int):
+    return api_success(dataset_controller.quality_summary(dataset_id))
+
+
 @router.get("/{dataset_id}/export/csv")
 def export_csv(dataset_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
     return Response(dataset_controller.export_csv(dataset_id), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=dataset_{dataset_id}.csv"})

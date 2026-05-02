@@ -119,3 +119,32 @@ def test_predict_batch_returns_heatmap_ready_contract(monkeypatch):
     assert result["summary"]["total_modules"] == 2
     assert result["summary"]["high_risk_count"] == 1
     assert len(inserted_rows) == 2
+
+
+def test_predict_batch_sanity_guard_prevents_low_risk_saturation(monkeypatch):
+    inserted_rows = []
+    estimator_payload = {
+        "estimator": DummyEstimator([0.99] * 12),
+        "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
+        "metadata": {"threshold": 0.5},
+    }
+    metrics = [
+        {"module_name": f"low_module_{idx}", "loc": 120, "complexity": 4, "coupling": 2, "code_churn": 5, "cohesion": 0.9, "percent_reused": 0.8}
+        for idx in range(12)
+    ]
+    monkeypatch.setattr(
+        prediction_service,
+        "_active_estimator",
+        lambda model_id=None: ({"id": 9, "name": "Saturated model", "model_type": "neural_network"}, estimator_payload, "AI production model"),
+    )
+    monkeypatch.setattr(prediction_service.metric_repository, "list_by_dataset", lambda dataset_id: metrics)
+    _patch_prediction_repositories(monkeypatch, inserted_rows)
+
+    result = prediction_service.predict_batch(PredictionRunRequest(project_id=1, dataset_id=101))
+
+    assert result["used_fallback"] is True
+    assert result["probability_guard"] is not None
+    assert result["model_source"] == "Measurement fallback (ML sanity guard)"
+    assert max(row["defect_probability"] for row in result["results"]) < 0.3
+    assert all(row["raw_ml_probability"] == 0.99 for row in result["results"])
+    assert all(row[2] is None for row in inserted_rows)

@@ -38,8 +38,8 @@ def training_run(run_id: int):
     return run
 
 
-def comparison():
-    return ml_training_service.comparison()
+def comparison(dataset_id: int | None = None):
+    return ml_training_service.comparison(dataset_id)
 
 
 def trainable_datasets(project_id: int):

@@ -38,6 +38,10 @@ def analysis_summary(dataset_id: int):
     return dataset_service.analysis_summary(dataset_id)
 
 
+def quality_summary(dataset_id: int):
+    return dataset_service.quality_summary(dataset_id)
+
+
 def export_csv(dataset_id: int):
     return export_service.dataset_csv(dataset_id)
 

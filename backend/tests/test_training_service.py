@@ -1,4 +1,5 @@
 from app.ml.feature_contract import SAFE_MODEL_FEATURE_COLUMNS
+from app.ml.threshold_tuning import resolve_profile_config, tune_threshold
 from app.repositories import dataset_repository, project_state_repository
 from app.schemas.model_schema import TrainingRequest
 from app.services import ml_training_service
@@ -52,7 +53,9 @@ def test_train_production_writes_contract_artifact_metadata(monkeypatch):
     monkeypatch.setattr(ml_training_service, "PRODUCTION_METADATA", metadata_path)
     monkeypatch.setattr(ml_training_service.joblib, "dump", lambda payload, path: captured.setdefault("artifact", payload))
     monkeypatch.setattr(ml_training_service.metric_repository, "training_records", lambda project_id, dataset_id: _training_rows())
+    monkeypatch.setattr(ml_training_service.model_repository, "create_model", lambda values: 42)
     monkeypatch.setattr(ml_training_service.model_repository, "upsert_production_model", lambda values: 42)
+    monkeypatch.setattr(ml_training_service.model_repository, "mark_best_model", lambda model_id: 1)
     monkeypatch.setattr(
         ml_training_service.model_repository,
         "create_training_run",
@@ -82,7 +85,8 @@ def test_train_production_writes_contract_artifact_metadata(monkeypatch):
     assert artifact["metadata"]["model_type"] == "logistic_regression"
     assert 0.2 <= artifact["metadata"]["threshold"] <= 0.8
     assert "pr_auc" in artifact["metadata"]["metrics"]
-    assert artifact["metadata"]["selection_strategy"] == "balanced_f1_with_recall_floor"
+    assert artifact["metadata"]["selection_strategy"] == "balanced_production"
+    assert artifact["metadata"]["selection_metric"] == "f1"
     assert artifact["metadata"]["selection_score"] is not None
     assert artifact["metadata"]["threshold_strategy"] == "balanced_f1_with_recall_floor"
     assert artifact["metadata"]["threshold_metrics"]["threshold"] == artifact["metadata"]["threshold"]
@@ -90,9 +94,10 @@ def test_train_production_writes_contract_artifact_metadata(monkeypatch):
     assert artifact["metadata"]["dataset_id"] == 123
     assert artifact["metadata"]["random_state"] == 42
     assert artifact["metadata"]["sklearn_version"]
-    assert result["metadata_path"] == str(metadata_path)
+    assert result["metadata_path"].endswith("_metadata.json")
     assert result["best_model_name"] == "Logistic Regression"
-    assert result["selection_strategy"] == "balanced_f1_with_recall_floor"
+    assert result["selection_strategy"] == "balanced_production"
+    assert result["selection_metric"] == "f1"
     assert result["selected_threshold"] == result["threshold"]
     assert result["threshold_metrics"]["threshold"] == result["threshold"]
     assert result["threshold_candidates_top_5"]
@@ -150,3 +155,16 @@ def test_balanced_threshold_strategy_prefers_precision_guardrail():
     assert selected["false_positive_count"] <= 3
     assert tuning["threshold_candidates_top_5"]
     assert "reason_for_selection" in tuning
+
+
+def test_training_profiles_resolve_and_tune_thresholds():
+    y_true = [1] * 8 + [0] * 8
+    probabilities = [0.95, 0.88, 0.8, 0.72, 0.64, 0.56, 0.48, 0.4, 0.78, 0.68, 0.58, 0.38, 0.32, 0.26, 0.22, 0.2]
+
+    for profile in ["balanced_production", "high_recall", "high_precision", "best_roc_auc", "best_pr_auc"]:
+        config = resolve_profile_config(profile)
+        tuning = tune_threshold(y_true, probabilities, config)
+
+        assert config.threshold_min <= tuning["selected_threshold"] <= config.threshold_max
+        assert tuning["threshold_metrics"]["confusion_matrix"].keys() == {"tn", "fp", "fn", "tp"}
+        assert tuning["threshold_candidates_top_5"]

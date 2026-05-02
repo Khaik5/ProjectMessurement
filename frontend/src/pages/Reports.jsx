@@ -1,4 +1,4 @@
-import { Download, FileText, Trash2 } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, Flame, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import Button from '../components/common/Button.jsx';
@@ -25,6 +25,13 @@ export default function Reports() {
   const [datasetId, setDatasetId] = useState('');
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState('');
+  const [exportOptions, setExportOptions] = useState({
+    include_full_modules: true,
+    include_heatmap: true,
+    include_charts: true,
+    top_n: 20
+  });
   const [message, setMessage] = useState('');
 
   async function load() {
@@ -62,19 +69,31 @@ export default function Reports() {
 
   const canExport = hasPermission('REPORT_EXPORT');
   const canDelete = hasPermission('REPORT_DELETE');
+  const selectedDataset = datasets.find((item) => String(item.id) === String(datasetId));
+  const selectedHasAnalysis = Number(selectedDataset?.prediction_count || 0) > 0;
+  const selectedFileName = selectedDataset?.file_name || selectedDataset?.name || `dataset_${datasetId}`;
+
+  function setExportOption(name, value) {
+    setExportOptions((prev) => ({ ...prev, [name]: value }));
+  }
 
   async function download(type) {
     if (!datasetId) return setMessage('Select a dataset first.');
+    if (!selectedHasAnalysis && type !== 'csv') return setMessage('Analyze the selected dataset before exporting PDF or Excel.');
+    setExportLoading(type);
     try {
-      const blob = await reportService.exportDataset(datasetId, type);
+      const blob = await reportService.exportDataset(datasetId, type, exportOptions);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `defectai_dataset_${datasetId}.${type}`;
+      link.download = `DefectAI_Report_${selectedFileName.replace(/[^a-z0-9._-]+/gi, '_')}.${type}`;
       link.click();
       URL.revokeObjectURL(url);
+      setMessage(`${type.toUpperCase()} export generated.`);
     } catch (err) {
       setMessage(err.message);
+    } finally {
+      setExportLoading('');
     }
   }
 
@@ -98,7 +117,7 @@ export default function Reports() {
         <div className="command-main">
           <span className="eyebrow">Export Control</span>
           <h3>Generate Report</h3>
-          <p>{datasetId ? `Dataset #${datasetId} selected` : 'Select a dataset to scope exports.'}</p>
+          <p>{datasetId ? `${selectedFileName} selected` : 'Select a dataset to scope exports.'}</p>
         </div>
         <div className="command-actions">
           <select value={datasetId} onChange={(e) => setDatasetId(e.target.value)} aria-label="Dataset">
@@ -118,17 +137,65 @@ export default function Reports() {
       <div className="grid-2">
         <Card><SectionHeader compact title="Generated Reports" /><ReportsTable rows={reports} selected={selected} onSelect={setSelected} selectable={canDelete} /></Card>
         <Card>
-          <SectionHeader compact title="Dataset Export" description="Selected dataset only." />
+          <SectionHeader compact title="Dataset Export" description="Professional PDF, Excel workbook, or raw CSV." />
+          {!selectedHasAnalysis && datasetId ? (
+            <StatusBanner type="warning" title="Analysis required">PDF and Excel exports need prediction records for this dataset.</StatusBanner>
+          ) : null}
+          <div className="export-options">
+            <div className="export-options-title"><SlidersHorizontal size={18} /><strong>Report Options</strong></div>
+            <label>
+              <input
+                type="checkbox"
+                checked={exportOptions.include_full_modules}
+                onChange={(event) => setExportOption('include_full_modules', event.target.checked)}
+              />
+              Full module appendix
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={exportOptions.include_heatmap}
+                onChange={(event) => setExportOption('include_heatmap', event.target.checked)}
+              />
+              Heatmap
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={exportOptions.include_charts}
+                onChange={(event) => setExportOption('include_charts', event.target.checked)}
+              />
+              Charts
+            </label>
+            <label className="topn-field">
+              Top modules
+              <input
+                type="number"
+                min="5"
+                max="100"
+                value={exportOptions.top_n}
+                onChange={(event) => setExportOption('top_n', Number(event.target.value || 20))}
+              />
+            </label>
+          </div>
           <div className="export-grid">
-            {['pdf', 'xlsx', 'csv'].map((type) => (
+            {[
+              { type: 'pdf', label: 'PDF Report', icon: FileText, detail: 'Summary, charts, heatmap' },
+              { type: 'xlsx', label: 'Excel Workbook', icon: FileSpreadsheet, detail: '7 sheets with charts' },
+              { type: 'csv', label: 'CSV Data', icon: Flame, detail: 'Module prediction rows' }
+            ].map((item) => {
+              const Icon = item.icon;
+              const disabled = !datasetId || Boolean(exportLoading) || (!selectedHasAnalysis && item.type !== 'csv');
+              return (
               canExport ? (
-                <button key={type} className="action-card" onClick={() => download(type)} disabled={!datasetId}>
-                  <Download size={19} />
-                  <strong>{type.toUpperCase()}</strong>
-                  <span>Export selected dataset</span>
+                <button key={item.type} className={`action-card ${exportLoading === item.type ? 'is-loading' : ''}`} onClick={() => download(item.type)} disabled={disabled}>
+                  <Icon size={20} />
+                  <strong>{exportLoading === item.type ? 'Preparing...' : item.label}</strong>
+                  <span>{item.detail}</span>
+                  <small><Download size={14} /> Download</small>
                 </button>
               ) : null
-            ))}
+            );})}
           </div>
         </Card>
       </div>

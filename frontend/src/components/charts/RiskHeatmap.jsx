@@ -3,17 +3,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import EmptyState from '../common/EmptyState.jsx';
 import { riskClass, riskFromProbability } from '../../utils/riskUtils.js';
-import { fmtNumber, fmtPercent } from '../../utils/formatters.js';
+import { fmtNumber, fmtPercent, normalizeProbability } from '../../utils/formatters.js';
 
 const levels = ['ALL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
+function normalizeRow(row) {
+  return {
+    ...row,
+    defect_probability: normalizeProbability(row.defect_probability),
+    risk_score: normalizeProbability(row.risk_score),
+    size_score: normalizeProbability(row.size_score),
+    complexity_score: normalizeProbability(row.complexity_score),
+    coupling_score: normalizeProbability(row.coupling_score),
+    churn_score: normalizeProbability(row.churn_score)
+  };
+}
+
 function normalizeRows(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.rows)) return data.rows;
+  if (Array.isArray(data)) return data.map(normalizeRow);
+  if (Array.isArray(data?.rows)) return data.rows.map(normalizeRow);
   if (Array.isArray(data?.heatmap)) {
     return data.heatmap.map((item) => ({
       module_name: item.x,
-      defect_probability: item.value,
+      defect_probability: normalizeProbability(item.value),
       risk_level: item.risk_level
     }));
   }
@@ -81,7 +93,7 @@ export default function RiskHeatmap({ data = [] }) {
             >
               <strong title={item.module_name}>{item.module_name}</strong>
               {columns.map(([, key]) => {
-                const value = Number(item[key] || 0);
+                const value = normalizeProbability(item[key]);
                 const cellLevel = key === 'defect_probability' ? level : riskFromProbability(value);
                 return (
                   <span

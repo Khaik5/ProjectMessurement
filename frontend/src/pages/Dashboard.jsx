@@ -135,6 +135,9 @@ export default function Dashboard() {
           <p>{summary?.used_fallback ? 'Measurement fallback active' : (summary?.active_model_name || 'Production model')}</p>
           <div className="hero-detail-grid">
             <span>{fmtNumber(summary?.prediction_count)} predictions</span>
+            <span>Model #{summary?.active_model_id || '-'}</span>
+            <span>Threshold {summary?.active_model_threshold ?? '-'}</span>
+            <span>Train DS #{summary?.active_model_training_dataset_id || '-'}</span>
             <span>{fmtNumber(summary?.high_risk_count)} high risk</span>
             <span>{fmtNumber(summary?.critical_count || 0)} critical</span>
             <span>{summary?.analysis_status || 'READY'}</span>
@@ -181,12 +184,18 @@ export default function Dashboard() {
         <KpiCard label="Datasets" value={fmtNumber(history.length)} helper="Available history" icon={Layers3} />
         <KpiCard tone="danger" label="High Risk" value={fmtNumber(summary?.high_risk_count)} helper="HIGH + CRITICAL" icon={AlertTriangle} />
         <KpiCard tone="warning" label="Avg Probability" value={fmtPercent(summary?.avg_defect_probability)} helper="Defect likelihood" icon={TrendingUp} />
-        <KpiCard label="Model Accuracy" value={fmtPercent(summary?.active_model_accuracy)} helper={summary?.active_model_name || 'No model'} icon={BrainCircuit} />
+        <KpiCard label="Model F1" value={fmtPercent(summary?.active_model_f1_score)} helper={summary?.active_model_name || 'No model'} icon={BrainCircuit} />
       </div>
 
       {needsAnalysis ? (
         <StatusBanner type="warning" title="Dataset not analyzed" action={<Button onClick={runAnalysisForCurrent}><Play size={18} />Analyze</Button>}>
           Run analysis to generate probabilities, labels, and heatmap data.
+        </StatusBanner>
+      ) : null}
+
+      {summary?.stale_model_predictions ? (
+        <StatusBanner type="warning" title="Predictions use an older model" action={<Button onClick={runAnalysisForCurrent}><Play size={18} />Re-analyze</Button>}>
+          This dataset was analyzed with model #{summary?.prediction_model_id}; active model is #{summary?.active_model_id}.
         </StatusBanner>
       ) : null}
 

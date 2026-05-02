@@ -33,6 +33,11 @@ def activate(model_id: int, current_user: dict = Depends(require_permission("MOD
     return api_success(ml_controller.activate(model_id), "Active model updated")
 
 
+@router.post("/models/{model_id}/activate")
+def activate_post(model_id: int, current_user: dict = Depends(require_permission("MODEL_DEPLOY"))):
+    return api_success(ml_controller.activate(model_id), "Active model updated")
+
+
 @router.get("/training-runs")
 def training_runs(project_id: int = 1):
     return api_success(ml_controller.training_runs())
@@ -44,8 +49,13 @@ def training_run(run_id: int):
 
 
 @router.get("/comparison")
-def comparison(project_id: int = 1):
-    return api_success(ml_controller.comparison())
+def comparison(project_id: int = 1, dataset_id: int | None = None):
+    return api_success(ml_controller.comparison(dataset_id))
+
+
+@router.get("/model-comparison")
+def model_comparison(project_id: int = 1, dataset_id: int | None = None):
+    return api_success(ml_controller.comparison(dataset_id))
 
 
 @router.delete("/models/{model_id}")

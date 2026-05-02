@@ -21,7 +21,7 @@ export const mlService = {
   trainingRun: (id) => axiosClient.get(`/ml/training-runs/${id}`).then(unwrapApi),
   deleteTrainingRun: (id) => axiosClient.delete(`/ml/training-runs/${id}`).then(unwrapApi),
   restoreTrainingRun: (id) => axiosClient.post(`/ml/training-runs/${id}/restore`).then(unwrapApi),
-  comparison: (projectId = 1) => axiosClient.get('/ml/comparison', { params: { project_id: projectId } }).then(unwrapApi),
+  comparison: (projectId = 1, datasetId = null) => axiosClient.get('/ml/model-comparison', { params: { project_id: projectId, dataset_id: datasetId } }).then(unwrapApi),
   trainableDatasets: (projectId = 1) => axiosClient.get('/ml/trainable-datasets', { params: { project_id: projectId } }).then(unwrapApi),
   trainingGuide: () => axiosClient.get('/ml/training-guide').then(unwrapApi)
 };

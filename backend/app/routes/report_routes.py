@@ -3,10 +3,30 @@ from fastapi.responses import Response
 
 from app.auth.auth_dependencies import require_permission, RoleChecker
 from app.controllers import report_controller
-from app.schemas.report_schema import ReportGenerateRequest, ExportMultipleReportsRequest
+from app.schemas.report_schema import ExportMultipleReportsRequest, ReportExportRequest, ReportGenerateRequest
 from app.utils.response_utils import api_success
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
+
+
+def _attachment(filename: str):
+    return {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+
+def _query_export_payload(
+    dataset_id: int,
+    include_full_modules: bool = True,
+    include_heatmap: bool = True,
+    include_charts: bool = True,
+    top_n: int = 20,
+) -> ReportExportRequest:
+    return ReportExportRequest(
+        dataset_id=dataset_id,
+        include_full_modules=include_full_modules,
+        include_heatmap=include_heatmap,
+        include_charts=include_charts,
+        top_n=top_n,
+    )
 
 
 @router.get("")
@@ -20,6 +40,58 @@ def generate(payload: ReportGenerateRequest, current_user: dict = Depends(requir
     return api_success(report_controller.generate(payload), "Report generated")
 
 
+@router.get("/export/pdf")
+def export_dataset_pdf_query(
+    dataset_id: int = Query(...),
+    include_full_modules: bool = Query(default=True),
+    include_heatmap: bool = Query(default=True),
+    include_charts: bool = Query(default=True),
+    top_n: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(require_permission("REPORT_EXPORT")),
+):
+    payload = _query_export_payload(dataset_id, include_full_modules, include_heatmap, include_charts, top_n)
+    options = report_controller.export_options(payload)
+    filename = report_controller.export_dataset_filename(dataset_id, "pdf")
+    return Response(report_controller.export_dataset_pdf(dataset_id, options), media_type="application/pdf", headers=_attachment(filename))
+
+
+@router.post("/export/pdf")
+def export_dataset_pdf_post(payload: ReportExportRequest, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
+    options = report_controller.export_options(payload)
+    filename = report_controller.export_dataset_filename(payload.dataset_id, "pdf")
+    return Response(report_controller.export_dataset_pdf(payload.dataset_id, options), media_type="application/pdf", headers=_attachment(filename))
+
+
+@router.get("/export/excel")
+def export_dataset_excel_query(
+    dataset_id: int = Query(...),
+    include_full_modules: bool = Query(default=True),
+    include_heatmap: bool = Query(default=True),
+    include_charts: bool = Query(default=True),
+    top_n: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(require_permission("REPORT_EXPORT")),
+):
+    payload = _query_export_payload(dataset_id, include_full_modules, include_heatmap, include_charts, top_n)
+    options = report_controller.export_options(payload)
+    filename = report_controller.export_dataset_filename(dataset_id, "xlsx")
+    return Response(
+        report_controller.export_dataset_xlsx(dataset_id, options),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=_attachment(filename),
+    )
+
+
+@router.post("/export/excel")
+def export_dataset_excel_post(payload: ReportExportRequest, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
+    options = report_controller.export_options(payload)
+    filename = report_controller.export_dataset_filename(payload.dataset_id, "xlsx")
+    return Response(
+        report_controller.export_dataset_xlsx(payload.dataset_id, options),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=_attachment(filename),
+    )
+
+
 @router.get("/{report_id}")
 def get_report(report_id: int, current_user: dict = Depends(require_permission("REPORT_VIEW"))):
     return api_success(report_controller.get_report(report_id))
@@ -27,32 +99,35 @@ def get_report(report_id: int, current_user: dict = Depends(require_permission("
 
 @router.get("/{report_id}/export/pdf")
 def export_pdf(report_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
-    return Response(report_controller.export_pdf(report_id), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=report_{report_id}.pdf"})
+    return Response(report_controller.export_pdf(report_id), media_type="application/pdf", headers=_attachment(f"DefectAI_Report_{report_id}.pdf"))
 
 
 @router.get("/{report_id}/export/csv")
 def export_csv(report_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
-    return Response(report_controller.export_csv(report_id), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=report_{report_id}.csv"})
+    return Response(report_controller.export_csv(report_id), media_type="text/csv", headers=_attachment(f"DefectAI_Report_{report_id}.csv"))
 
 
 @router.get("/{report_id}/export/xlsx")
 def export_xlsx(report_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
-    return Response(report_controller.export_xlsx(report_id), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=report_{report_id}.xlsx"})
+    return Response(report_controller.export_xlsx(report_id), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=_attachment(f"DefectAI_Report_{report_id}.xlsx"))
 
 
 @router.get("/dataset/{dataset_id}/export/pdf")
 def export_dataset_pdf(dataset_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
-    return Response(report_controller.export_dataset_pdf(dataset_id), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=dataset_{dataset_id}_report.pdf"})
+    filename = report_controller.export_dataset_filename(dataset_id, "pdf")
+    return Response(report_controller.export_dataset_pdf(dataset_id), media_type="application/pdf", headers=_attachment(filename))
 
 
 @router.get("/dataset/{dataset_id}/export/csv")
 def export_dataset_csv(dataset_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
-    return Response(report_controller.export_dataset_csv(dataset_id), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=dataset_{dataset_id}_predictions.csv"})
+    filename = report_controller.export_dataset_filename(dataset_id, "csv")
+    return Response(report_controller.export_dataset_csv(dataset_id), media_type="text/csv", headers=_attachment(filename))
 
 
 @router.get("/dataset/{dataset_id}/export/xlsx")
 def export_dataset_xlsx(dataset_id: int, current_user: dict = Depends(require_permission("REPORT_EXPORT"))):
-    return Response(report_controller.export_dataset_xlsx(dataset_id), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=dataset_{dataset_id}_report.xlsx"})
+    filename = report_controller.export_dataset_filename(dataset_id, "xlsx")
+    return Response(report_controller.export_dataset_xlsx(dataset_id), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=_attachment(filename))
 
 
 @router.delete("/{report_id}")

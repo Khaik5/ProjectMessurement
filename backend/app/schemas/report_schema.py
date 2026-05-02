@@ -28,3 +28,11 @@ class ExportMultipleReportsRequest(BaseModel):
     """Schema cho việc export nhiều reports cùng lúc"""
     report_ids: list[int]
     format: str = "csv"  # csv, pdf, xlsx
+
+
+class ReportExportRequest(BaseModel):
+    dataset_id: int
+    include_full_modules: bool = True
+    include_heatmap: bool = True
+    include_charts: bool = True
+    top_n: int = 20

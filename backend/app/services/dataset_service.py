@@ -5,7 +5,9 @@ import json
 import pandas as pd
 
 from app.repositories import dataset_repository
+from app.repositories import metric_repository, model_repository, prediction_repository
 from app.repositories import project_state_repository
+from app.ml.feature_engineering import build_p7_features
 from app.utils.file_utils import upload_to_dataframe
 from app.utils.validators import OPTIONAL_COLUMNS, REQUIRED_COLUMNS, validate_metrics_dataframe
 from app.utils.measurement_utils import compute_measurement_metrics
@@ -164,6 +166,95 @@ def set_current(dataset_id: int):
 
 def analysis_summary(dataset_id: int):
     return dataset_repository.analysis_summary(dataset_id)
+
+
+def _series_stats(df: pd.DataFrame, column: str) -> dict:
+    if column not in df.columns:
+        return {"min": None, "mean": None, "max": None}
+    values = pd.to_numeric(df[column], errors="coerce").dropna()
+    if values.empty:
+        return {"min": None, "mean": None, "max": None}
+    return {"min": float(values.min()), "mean": float(values.mean()), "max": float(values.max())}
+
+
+def quality_summary(dataset_id: int):
+    dataset = dataset_repository.get_dataset(dataset_id)
+    if not dataset:
+        raise ValueError(f"Dataset #{dataset_id} not found")
+    metrics = metric_repository.list_by_dataset(dataset_id)
+    if not metrics:
+        return {"dataset": dataset, "message": "Dataset has no MetricRecords", "feature_stats": {}, "prediction_summary": None}
+    df = pd.DataFrame(metrics)
+    engineered = build_p7_features(df, use_label_density=False)
+    feature_columns = [
+        "complexity",
+        "cyclomatic_complexity",
+        "coupling",
+        "cohesion",
+        "code_churn",
+        "change_request_backlog",
+        "pending_effort_hours",
+        "percent_reused",
+        "risk_score",
+    ]
+    labels = pd.to_numeric(df.get("defect_label"), errors="coerce") if "defect_label" in df else pd.Series(dtype=float)
+    defect_counts = pd.to_numeric(df.get("defect_count"), errors="coerce") if "defect_count" in df else pd.Series(dtype=float)
+    predictions = prediction_repository.by_dataset(dataset_id)
+    probability_values = pd.Series([row.get("defect_probability") for row in predictions], dtype="float64") if predictions else pd.Series(dtype=float)
+    risk_counts = {level: 0 for level in ["LOW", "MEDIUM", "HIGH", "CRITICAL"]}
+    for row in predictions:
+        risk = str(row.get("risk_level") or "").upper()
+        if risk in risk_counts:
+            risk_counts[risk] += 1
+    active_model = model_repository.get_active_production_model()
+    prediction_model = next((row for row in predictions if row.get("model_id")), None)
+    warnings = list(engineered.attrs.get("warnings", []))
+    for ratio_column in ["cohesion", "percent_reused"]:
+        raw_values = pd.to_numeric(df.get(ratio_column), errors="coerce") if ratio_column in df else pd.Series(dtype=float)
+        if not raw_values.empty and raw_values.dropna().gt(1).any():
+            warnings.append(f"{ratio_column} contained values > 1 and should be interpreted as 0-100 percentage input.")
+        normalized = pd.to_numeric(engineered.get(ratio_column), errors="coerce")
+        if normalized.dropna().gt(1).any() or normalized.dropna().lt(0).any():
+            warnings.append(f"{ratio_column} normalization produced values outside [0,1].")
+    return {
+        "dataset": dataset,
+        "total_modules": len(df),
+        "feature_stats": {column: _series_stats(engineered, column) for column in feature_columns},
+        "label_summary": {
+            "label_0": int((labels == 0).sum()) if not labels.empty else 0,
+            "label_1": int((labels == 1).sum()) if not labels.empty else 0,
+            "positive_rate": float((labels == 1).mean()) if not labels.dropna().empty else None,
+        },
+        "defect_count_summary": {
+            "zero_count": int((defect_counts.fillna(0) == 0).sum()) if not defect_counts.empty else 0,
+            "max": float(defect_counts.max()) if not defect_counts.dropna().empty else None,
+            "avg": float(defect_counts.mean()) if not defect_counts.dropna().empty else None,
+        },
+        "prediction_summary": {
+            "total": len(predictions),
+            "avg_probability": float(probability_values.mean()) if not probability_values.empty else None,
+            "min_probability": float(probability_values.min()) if not probability_values.empty else None,
+            "max_probability": float(probability_values.max()) if not probability_values.empty else None,
+            "risk_distribution": risk_counts,
+            "model_id": prediction_model.get("model_id") if prediction_model else None,
+            "model_used": prediction_model.get("model_used") if prediction_model else None,
+        },
+        "active_model": {
+            "id": active_model.get("id") if active_model else None,
+            "name": active_model.get("name") if active_model else None,
+            "model_type": active_model.get("model_type") if active_model else None,
+            "dataset_id": active_model.get("dataset_id") if active_model else None,
+            "training_profile": active_model.get("training_profile") if active_model else None,
+            "threshold": active_model.get("threshold") if active_model else None,
+            "accuracy": active_model.get("accuracy") if active_model else None,
+            "precision": active_model.get("precision") if active_model else None,
+            "recall": active_model.get("recall") if active_model else None,
+            "f1_score": active_model.get("f1_score") if active_model else None,
+            "roc_auc": active_model.get("roc_auc") if active_model else None,
+            "pr_auc": active_model.get("pr_auc") if active_model else None,
+        },
+        "warnings": warnings,
+    }
 
 
 def trainable(project_id: int):

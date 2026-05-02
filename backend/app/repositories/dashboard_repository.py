@@ -16,9 +16,13 @@ def summary(project_id: int, dataset_id: int):
             (SELECT SUM(CASE WHEN r.name IN ('HIGH','CRITICAL') THEN 1 ELSE 0 END) FROM Predictions p LEFT JOIN RiskLevels r ON r.id = p.risk_level_id WHERE p.dataset_id = ?) AS high_risk,
             (SELECT SUM(CASE WHEN r.name = 'CRITICAL' THEN 1 ELSE 0 END) FROM Predictions p LEFT JOIN RiskLevels r ON r.id = p.risk_level_id WHERE p.dataset_id = ?) AS critical_count,
             (SELECT CASE WHEN COUNT(*) > 0 AND SUM(CASE WHEN model_id IS NULL THEN 1 ELSE 0 END) = COUNT(*) THEN 1 ELSE 0 END FROM Predictions WHERE dataset_id = ?) AS used_fallback,
-            (SELECT TOP 1 accuracy FROM MLModels WHERE is_active = 1 AND name = 'DefectAI P7 Production Model' ORDER BY created_at DESC) AS active_accuracy
+            (SELECT TOP 1 model_id FROM Predictions WHERE dataset_id = ? ORDER BY created_at DESC, id DESC) AS prediction_model_id,
+            (SELECT TOP 1 m.name FROM Predictions p LEFT JOIN MLModels m ON m.id = p.model_id WHERE p.dataset_id = ? ORDER BY p.created_at DESC, p.id DESC) AS prediction_model_name,
+            (SELECT TOP 1 accuracy FROM MLModels WHERE is_active = 1 AND ISNULL(is_deleted,0)=0 ORDER BY created_at DESC, id DESC) AS active_accuracy
         """,
         [
+            dataset_id,
+            dataset_id,
             dataset_id,
             dataset_id,
             dataset_id,
@@ -35,7 +39,7 @@ def summary(project_id: int, dataset_id: int):
 
 
 def active_model():
-    return fetch_one("SELECT TOP 1 * FROM MLModels WHERE is_active = 1 AND name = 'DefectAI P7 Production Model' ORDER BY created_at DESC")
+    return fetch_one("SELECT TOP 1 * FROM MLModels WHERE is_active = 1 AND ISNULL(is_deleted,0)=0 ORDER BY created_at DESC, id DESC")
 
 
 def risk_distribution(project_id: int, dataset_id: int):

@@ -37,6 +37,13 @@ from app.ml.feature_contract import (
     assert_safe_model_features,
 )
 from app.ml.feature_engineering import build_p7_features
+from app.ml.threshold_tuning import (
+    ThresholdTuningConfig,
+    metrics_at_threshold as threshold_metrics_at,
+    profile_metadata,
+    resolve_profile_config,
+    tune_threshold,
+)
 from app.repositories import metric_repository, model_repository
 from app.schemas.model_schema import TrainingRequest
 from app.services.audit_service import log_action
@@ -65,6 +72,7 @@ MODEL_NAMES = {
 
 
 def _estimator(model_type: str, payload: TrainingRequest, training_rows: int | None = None):
+    hyperparams = (payload.model_hyperparams or {}).get(model_type, {})
     if model_type == "logistic_regression":
         return Pipeline(
             [
@@ -74,7 +82,9 @@ def _estimator(model_type: str, payload: TrainingRequest, training_rows: int | N
                     "model",
                     LogisticRegression(
                         max_iter=max(payload.max_iter, 1000),
-                        class_weight="balanced",
+                        class_weight=hyperparams.get("class_weight", "balanced"),
+                        solver=hyperparams.get("solver", "lbfgs"),
+                        C=float(hyperparams.get("C", 1.0)),
                         random_state=payload.random_state,
                     ),
                 ),
@@ -87,9 +97,10 @@ def _estimator(model_type: str, payload: TrainingRequest, training_rows: int | N
                 (
                     "model",
                     RandomForestClassifier(
-                        n_estimators=300,
-                        max_depth=None,
-                        class_weight="balanced_subsample",
+                        n_estimators=int(hyperparams.get("n_estimators", 300)),
+                        max_depth=hyperparams.get("max_depth"),
+                        min_samples_leaf=int(hyperparams.get("min_samples_leaf", 1)),
+                        class_weight=hyperparams.get("class_weight", "balanced_subsample"),
                         random_state=payload.random_state,
                         n_jobs=-1,
                     ),
@@ -98,6 +109,9 @@ def _estimator(model_type: str, payload: TrainingRequest, training_rows: int | N
         )
     if model_type == "neural_network":
         hidden = int(payload.hidden_layer_size)
+        hidden_layers = hyperparams.get("hidden_layer_sizes", (hidden, max(8, hidden // 2)))
+        if isinstance(hidden_layers, list):
+            hidden_layers = tuple(int(value) for value in hidden_layers)
         early_stopping = training_rows is None or training_rows >= MLP_EARLY_STOPPING_MIN_ROWS
         return Pipeline(
             [
@@ -106,11 +120,14 @@ def _estimator(model_type: str, payload: TrainingRequest, training_rows: int | N
                 (
                     "model",
                     MLPClassifier(
-                        hidden_layer_sizes=(hidden, max(8, hidden // 2)),
-                        activation="relu",
-                        max_iter=payload.max_iter,
-                        early_stopping=early_stopping,
-                        validation_fraction=0.15,
+                        hidden_layer_sizes=hidden_layers,
+                        activation=hyperparams.get("activation", "relu"),
+                        solver=hyperparams.get("solver", "adam"),
+                        alpha=float(hyperparams.get("alpha", 0.0001)),
+                        learning_rate_init=float(hyperparams.get("learning_rate_init", 0.001)),
+                        max_iter=max(payload.max_iter, 1000),
+                        early_stopping=bool(hyperparams.get("early_stopping", early_stopping)),
+                        validation_fraction=float(hyperparams.get("validation_fraction", 0.15)),
                         n_iter_no_change=20,
                         random_state=payload.random_state,
                     ),
@@ -121,6 +138,8 @@ def _estimator(model_type: str, payload: TrainingRequest, training_rows: int | N
 
 
 def _types(payload: TrainingRequest):
+    if payload.selected_models:
+        return payload.selected_models
     if payload.model_types:
         return payload.model_types
     if payload.model_type and payload.model_type != "all":
@@ -148,43 +167,11 @@ def _cm_dict(y_true, y_pred) -> dict:
 
 
 def _metrics_at_threshold(y_true, probabilities, threshold: float) -> dict:
-    y_pred = (np.asarray(probabilities, dtype=float) >= threshold).astype(int)
-    cm = _cm_dict(y_true, y_pred)
-    tn = cm["tn"]
-    fp = cm["fp"]
-    fn = cm["fn"]
-    tp = cm["tp"]
-    total = tn + fp + fn + tp
-    negative_total = tn + fp
-    positive_total = fn + tp
-    f1 = float(f1_score(y_true, y_pred, zero_division=0))
-    fbeta = float(fbeta_score(y_true, y_pred, beta=BALANCED_BETA, zero_division=0))
-    precision = float(precision_score(y_true, y_pred, zero_division=0))
-    recall = float(recall_score(y_true, y_pred, zero_division=0))
-    return {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-        "f1_score": f1,
-        "fbeta": fbeta,
-        "fbeta_score": fbeta,
-        "fbeta_beta": BALANCED_BETA,
-        "f2_score": float(fbeta_score(y_true, y_pred, beta=2, zero_division=0)),
-        "recall_weighted_score": float(0.55 * recall + 0.45 * precision),
-        "false_positive_count": int(fp),
-        "false_negative_count": int(fn),
-        "false_positive_rate": float(fp / negative_total) if negative_total else 0.0,
-        "false_negative_rate": float(fn / positive_total) if positive_total else 0.0,
-        "predicted_positive_rate": float((tp + fp) / total) if total else 0.0,
-        "predicted_negative_rate": float((tn + fn) / total) if total else 0.0,
-        "confusion_matrix": cm,
-        "threshold": float(round(threshold, 4)),
-    }
+    return threshold_metrics_at(y_true, probabilities, threshold, beta=BALANCED_BETA)
 
 
-def _classification_metrics(y_true, probabilities, threshold: float) -> dict:
-    metrics = _metrics_at_threshold(y_true, probabilities, threshold)
+def _classification_metrics(y_true, probabilities, threshold: float, beta: float = BALANCED_BETA) -> dict:
+    metrics = threshold_metrics_at(y_true, probabilities, threshold, beta=beta)
     metrics["roc_auc"] = _safe_metric("roc_auc", y_true, probabilities)
     metrics["pr_auc"] = _safe_metric("pr_auc", y_true, probabilities)
     return metrics
@@ -208,109 +195,23 @@ def _top_threshold_candidates(candidates: list[dict], target_recall: float, limi
 
 
 def _tune_threshold(y_true, probabilities, strategy: str, target_recall: float) -> dict:
-    candidates = []
-    for threshold in np.round(np.arange(0.2, 0.801, 0.01), 2):
-        metrics = _metrics_at_threshold(y_true, probabilities, float(threshold))
-        candidates.append(metrics)
-    if not candidates:
-        selected = _metrics_at_threshold(y_true, probabilities, DEFAULT_THRESHOLD)
-        return {
-            "strategy": strategy,
-            "selected": selected,
-            "threshold_metrics": selected,
-            "threshold_candidates_top_5": [selected],
-            "reason_for_selection": "No threshold candidates were generated; default threshold was used.",
-            "candidates": [selected],
-        }
-
-    if strategy == "best_f1":
-        acceptable = [item for item in candidates if item["precision"] >= MIN_ACCEPTABLE_PRECISION]
-        selected = max(acceptable or candidates, key=_candidate_sort_key)
-        reason = "Selected the threshold with the highest F1 score, with precision guardrail applied when possible."
-    elif strategy == "min_recall":
-        eligible = [item for item in candidates if item["recall"] >= target_recall]
-        acceptable = [item for item in eligible if item["precision"] >= MIN_ACCEPTABLE_PRECISION]
-        selected = max(acceptable or eligible or candidates, key=_candidate_sort_key)
-        reason = f"Selected the highest-F1 threshold meeting recall >= {target_recall:.2f} where possible."
-    elif strategy == BALANCED_THRESHOLD_STRATEGY:
-        recall_floor = [item for item in candidates if item["recall"] >= target_recall]
-        high_precision = [item for item in recall_floor if item["precision"] >= TARGET_PRECISION]
-        production_guarded = [
-            item
-            for item in high_precision
-            if item["false_positive_rate"] <= MAX_FALSE_POSITIVE_RATE
-            and item["predicted_positive_rate"] <= MAX_PREDICTED_POSITIVE_RATE
-        ]
-        acceptable = [item for item in recall_floor if item["precision"] >= MIN_ACCEPTABLE_PRECISION]
-
-        if production_guarded:
-            selected = max(production_guarded, key=_candidate_sort_key)
-            reason = (
-                f"Selected highest-F1 threshold with recall >= {target_recall:.2f}, "
-                f"precision >= {TARGET_PRECISION:.2f}, and false-positive guardrails."
-            )
-        elif high_precision:
-            selected = max(high_precision, key=_candidate_sort_key)
-            reason = (
-                f"Selected highest-F1 threshold with recall >= {target_recall:.2f} and "
-                f"precision >= {TARGET_PRECISION:.2f}; false-positive guardrails could not all be satisfied."
-            )
-        elif acceptable:
-            selected = max(acceptable, key=_candidate_sort_key)
-            reason = (
-                f"No threshold reached precision >= {TARGET_PRECISION:.2f}; selected highest-F1 threshold "
-                f"with recall >= {target_recall:.2f} and precision >= {MIN_ACCEPTABLE_PRECISION:.2f}."
-            )
-            logger.warning(reason)
-        elif recall_floor:
-            selected = max(recall_floor, key=_candidate_sort_key)
-            reason = (
-                f"No threshold met the production precision guardrail. Selected highest-F1 threshold "
-                f"with recall >= {target_recall:.2f}; review model/data before production."
-            )
-            logger.warning(reason)
-        else:
-            acceptable_any = [item for item in candidates if item["precision"] >= MIN_ACCEPTABLE_PRECISION]
-            selected = max(acceptable_any or candidates, key=_candidate_sort_key)
-            reason = (
-                f"No threshold met recall >= {target_recall:.2f}. Selected best balanced F1 threshold; "
-                "collect more data or revisit features."
-            )
-            logger.warning(reason)
-    else:
-        acceptable = [item for item in candidates if item["precision"] >= MIN_ACCEPTABLE_PRECISION]
-        selected = max(
-            acceptable or candidates,
-            key=lambda item: (
-                float(item.get("fbeta_score") or 0.0),
-                float(item.get("f1_score") or 0.0),
-                float(item.get("precision") or 0.0),
-                -float(item.get("false_positive_rate") or 0.0),
-            ),
-        )
-        reason = (
-            f"Selected threshold using balanced F-beta beta={BALANCED_BETA}; "
-            "legacy recall_weighted no longer optimizes for recall alone."
-        )
-
-    top_5 = _top_threshold_candidates(candidates, target_recall)
-    return {
-        "strategy": strategy,
-        "threshold_strategy": strategy,
-        "selected": selected,
-        "selected_threshold": selected["threshold"],
-        "threshold_metrics": selected,
-        "threshold_candidates_top_5": top_5,
-        "reason_for_selection": reason,
-        "baseline": _metrics_at_threshold(y_true, probabilities, DEFAULT_THRESHOLD),
-        "candidates": candidates,
-    }
+    resolved = ThresholdTuningConfig(
+        strategy="balanced_f1_with_recall_floor" if strategy in {"recall_weighted", "min_recall"} else strategy,
+        recall_floor=target_recall,
+        precision_floor=TARGET_PRECISION,
+        beta=BALANCED_BETA,
+        threshold_min=0.20,
+        threshold_max=0.80,
+        threshold_step=0.01,
+        best_model_metric="f1",
+    )
+    return tune_threshold(y_true, probabilities, resolved)
 
 
-def _evaluate_estimator(estimator, X_test, y_test, threshold: float):
+def _evaluate_estimator(estimator, X_test, y_test, threshold: float, beta: float = BALANCED_BETA):
     probabilities = np.clip(estimator.predict_proba(X_test)[:, 1].astype(float), 0.0, 1.0)
     y_pred = (probabilities >= threshold).astype(int)
-    return y_pred, probabilities, _classification_metrics(y_test, probabilities, threshold)
+    return y_pred, probabilities, _classification_metrics(y_test, probabilities, threshold, beta=beta)
 
 
 def _cross_validation_metrics(model_type: str, X: pd.DataFrame, y: pd.Series, payload: TrainingRequest) -> dict:
@@ -437,14 +338,62 @@ def _prepare_training_frame(payload: TrainingRequest):
     return (*split, dataset_profile)
 
 
-def _selection_score(item: dict, strategy: str) -> float:
-    if strategy in {"best_f1", BALANCED_THRESHOLD_STRATEGY}:
-        return float(item.get("f1_score") or 0.0)
-    return float(item.get("fbeta_score") or item.get("recall_weighted_score") or item.get("f1_score") or 0.0)
+def _selection_score(item: dict, metric: str) -> float:
+    if metric in {"roc_auc", "pr_auc", "precision", "recall"}:
+        return float(item.get(metric) or 0.0)
+    if metric == "fbeta":
+        return float(item.get("fbeta_score") or 0.0)
+    if metric == "balanced_score":
+        return min(float(item.get("precision") or 0.0), float(item.get("recall") or 0.0))
+    return float(item.get("f1_score") or 0.0)
 
 
-def _select_best_model(trained: list[dict], strategy: str) -> dict:
-    if strategy in {"best_f1", BALANCED_THRESHOLD_STRATEGY}:
+def _select_best_model(trained: list[dict], metric: str) -> dict:
+    if metric == "roc_auc":
+        return max(
+            trained,
+            key=lambda item: (
+                float(item.get("roc_auc") or -1.0),
+                float(item.get("pr_auc") or -1.0),
+                float(item.get("f1_score") or 0.0),
+                min(float(item.get("precision") or 0.0), float(item.get("recall") or 0.0)),
+                -abs(float(item.get("overfit_gap") or 0.0)),
+            ),
+        )
+    if metric == "pr_auc":
+        return max(
+            trained,
+            key=lambda item: (
+                float(item.get("pr_auc") or -1.0),
+                float(item.get("f1_score") or 0.0),
+                float(item.get("recall") or 0.0),
+                float(item.get("precision") or 0.0),
+                -abs(float(item.get("overfit_gap") or 0.0)),
+            ),
+        )
+    if metric == "fbeta":
+        return max(
+            trained,
+            key=lambda item: (
+                float(item.get("fbeta_score") or 0.0),
+                float(item.get("f1_score") or 0.0),
+                float(item.get("pr_auc") or -1.0),
+                float(item.get("precision") or 0.0),
+                -float(item.get("false_negative_count") or 999999.0),
+            ),
+        )
+    if metric == "precision":
+        return max(
+            trained,
+            key=lambda item: (
+                float(item.get("precision") or 0.0),
+                float(item.get("f1_score") or 0.0),
+                float(item.get("pr_auc") or -1.0),
+                float(item.get("roc_auc") or -1.0),
+                -float(item.get("false_positive_count") or 999999.0),
+            ),
+        )
+    if metric in {"f1", "balanced_score"}:
         return max(
             trained,
             key=lambda item: (
@@ -457,37 +406,68 @@ def _select_best_model(trained: list[dict], strategy: str) -> dict:
                 -float(item.get("latency_ms") or 999999.0),
             ),
         )
-    return max(
-        trained,
-        key=lambda item: (
-            _selection_score(item, strategy),
-            float(item.get("f1_score") or 0.0),
-            float(item.get("precision") or 0.0),
-            float(item.get("recall") or 0.0),
-            float(item.get("pr_auc") or -1.0),
-            float(item.get("roc_auc") or -1.0),
-            -float(item.get("latency_ms") or 999999.0),
-        ),
-    )
+    return max(trained, key=lambda item: (float(item.get("f1_score") or 0.0), float(item.get("pr_auc") or -1.0)))
 
 
 def train(payload: TrainingRequest):
     return train_production(payload, model_types=_types(payload))
 
 
+def _threshold_config_from_payload(payload: TrainingRequest) -> ThresholdTuningConfig:
+    overrides = payload.threshold_config.model_dump(exclude_none=True) if payload.threshold_config else {}
+    if payload.threshold_strategy:
+        strategy = payload.threshold_strategy
+        if strategy == "recall_weighted":
+            strategy = "recall_priority"
+        elif strategy == "min_recall":
+            strategy = "balanced_f1_with_recall_floor"
+        overrides["strategy"] = strategy
+        overrides.setdefault("recall_floor", payload.target_recall)
+    return resolve_profile_config(payload.training_profile, overrides)
+
+
+def _artifact_paths(version: str, model_type: str, profile: str) -> tuple[Path, Path]:
+    stem = f"defectai_p7_{profile}_{model_type}_{version}"
+    return ARTIFACT_DIR / f"{stem}.joblib", ARTIFACT_DIR / f"{stem}_metadata.json"
+
+
+def _metrics_subset(item: dict) -> dict:
+    keys = [
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "f1_score",
+        "fbeta",
+        "fbeta_score",
+        "fbeta_beta",
+        "roc_auc",
+        "pr_auc",
+        "false_positive_count",
+        "false_negative_count",
+        "false_positive_rate",
+        "false_negative_rate",
+        "predicted_positive_rate",
+        "confusion_matrix",
+    ]
+    return {key: item.get(key) for key in keys}
+
+
 def train_production(payload: TrainingRequest, model_types: list[str] | None = None):
+    threshold_config = _threshold_config_from_payload(payload)
+    selected_models = list(model_types or _types(payload))
     X_train, X_test, y_train, y_test, dataset_profile = _prepare_training_frame(payload)
     X_all = pd.concat([X_train, X_test], axis=0)
     y_all = pd.concat([y_train, y_test], axis=0)
 
     trained: list[dict] = []
     failed: list[dict] = []
-    version = datetime.now().strftime("v%Y%m%d%H%M%S")
+    version = datetime.now().strftime("v%Y%m%d%H%M%S%f")
     created_at = datetime.now().isoformat()
     fitted_estimators = {}
     warning_messages = list(dataset_profile.get("feature_warnings", []))
 
-    for model_type in (model_types or ["logistic_regression", "random_forest", "neural_network"]):
+    for model_type in selected_models:
         try:
             estimator = _estimator(model_type, payload, training_rows=len(X_train))
             start = time.perf_counter()
@@ -495,14 +475,14 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
             training_seconds = time.perf_counter() - start
 
             probabilities = np.clip(estimator.predict_proba(X_test)[:, 1].astype(float), 0.0, 1.0)
-            tuning = _tune_threshold(y_test, probabilities, payload.threshold_strategy, payload.target_recall)
+            tuning = tune_threshold(y_test, probabilities, threshold_config)
             threshold = float(tuning["selected"]["threshold"])
             selected_threshold_metrics = tuning["selected"]
-            if selected_threshold_metrics.get("precision", 0.0) < MIN_ACCEPTABLE_PRECISION:
+            if selected_threshold_metrics.get("precision", 0.0) < threshold_config.precision_floor:
                 warning_messages.append(
                     f"{MODEL_NAMES[model_type]} selected threshold {threshold:.2f} has precision "
                     f"{selected_threshold_metrics.get('precision', 0.0):.3f}, below production guardrail "
-                    f"{MIN_ACCEPTABLE_PRECISION:.2f}."
+                    f"{threshold_config.precision_floor:.2f}."
                 )
             if selected_threshold_metrics.get("false_positive_rate", 0.0) > MAX_FALSE_POSITIVE_RATE:
                 warning_messages.append(
@@ -510,9 +490,9 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
                     f"{selected_threshold_metrics.get('false_positive_rate', 0.0):.3f}; review warning volume."
                 )
 
-            train_pred, train_probabilities, train_metrics = _evaluate_estimator(estimator, X_train, y_train, threshold)
+            train_pred, train_probabilities, train_metrics = _evaluate_estimator(estimator, X_train, y_train, threshold, threshold_config.beta)
             pred_start = time.perf_counter()
-            y_pred, probabilities, metrics = _evaluate_estimator(estimator, X_test, y_test, threshold)
+            y_pred, probabilities, metrics = _evaluate_estimator(estimator, X_test, y_test, threshold, threshold_config.beta)
             latency_ms = ((time.perf_counter() - pred_start) / max(len(X_test), 1)) * 1000
             cv_metrics = _cross_validation_metrics(model_type, X_all, y_all, payload)
             importance = _feature_importance(estimator, X_test, y_test, payload) if model_type == "random_forest" else {}
@@ -525,7 +505,7 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
             metrics.update(
                 {
                     "threshold": threshold,
-                    "threshold_strategy": payload.threshold_strategy,
+                    "threshold_strategy": threshold_config.strategy,
                     "selected_threshold": threshold,
                     "threshold_metrics": tuning["selected"],
                     "threshold_candidates_top_5": tuning.get("threshold_candidates_top_5", []),
@@ -554,11 +534,16 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
             trained.append(
                 {
                     "model_type": model_type,
+                    "model_key": model_type,
                     "model_name": MODEL_NAMES[model_type],
+                    "training_profile": payload.training_profile,
+                    "status": "success",
                     "latency_ms": round(latency_ms, 4),
                     "prediction_latency_ms": round(latency_ms, 4),
                     "training_time_seconds": round(training_seconds, 4),
                     "train_time_seconds": round(training_seconds, 4),
+                    "train_score": train_metrics.get("roc_auc"),
+                    "test_score": metrics.get("roc_auc"),
                     "train_metrics": train_metrics,
                     "cross_validation": cv_metrics,
                     "overfit_gap": overfit_gap,
@@ -573,11 +558,22 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
     if not trained:
         raise ValueError(f"All model training attempts failed: {failed}")
 
-    best = _select_best_model(trained, payload.best_model_strategy)
+    selection_metric = payload.best_model_strategy or threshold_config.best_model_metric
+    if selection_metric in {"balanced_f1_with_recall_floor", "best_f1"}:
+        selection_metric = "f1"
+    if selection_metric in {"recall_priority", "recall_weighted"}:
+        selection_metric = "fbeta"
+    if selection_metric == "precision_priority":
+        selection_metric = "precision"
+    if selection_metric == "best_roc_auc":
+        selection_metric = "roc_auc"
+    if selection_metric == "best_pr_auc":
+        selection_metric = "pr_auc"
+    best = _select_best_model(trained, selection_metric)
     best_fit = fitted_estimators[best["model_type"]]
-    selection_score = _selection_score(best, payload.best_model_strategy)
+    selection_score = _selection_score(best, selection_metric)
     selection_reason = (
-        f"Selected {best['model_name']} using {payload.best_model_strategy}; "
+        f"Selected {best['model_name']} using {payload.training_profile}/{selection_metric}; "
         f"score={selection_score:.4f}, f1={best['f1_score']:.4f}, precision={best['precision']:.4f}, "
         f"recall={best['recall']:.4f}, pr_auc={best.get('pr_auc')}, threshold={best['threshold']:.2f}."
     )
@@ -585,50 +581,23 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
     if any(round(float(item["accuracy"]), 6) >= 1.0 for item in trained):
         warning_messages.append("Perfect accuracy detected. Dataset may be too small, duplicated, or too easy. Validate with another dataset.")
 
-    metadata = {
+    common_metadata = {
         "artifact_schema_version": 2,
-        "name": model_repository.PRODUCTION_MODEL_NAME,
         "version": version,
-        "model_type": best["model_type"],
         "best_model_type": best["model_type"],
         "best_model_name": best["model_name"],
-        "model_name": best["model_name"],
+        "best_model_key": best["model_type"],
         "feature_schema_version": MODEL_FEATURE_SCHEMA_VERSION,
         "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
         "engineered_output_columns": ENGINEERED_OUTPUT_COLUMNS,
         "excluded_leakage_columns": EXCLUDED_LEAKAGE_COLUMNS,
-        "metrics": {
-            key: best.get(key)
-            for key in [
-                "accuracy",
-                "precision",
-                "recall",
-                "f1",
-                "f1_score",
-                "fbeta",
-                "fbeta_score",
-                "fbeta_beta",
-                "f2_score",
-                "roc_auc",
-                "pr_auc",
-                "false_positive_count",
-                "false_negative_count",
-                "false_positive_rate",
-                "false_negative_rate",
-                "predicted_positive_rate",
-                "confusion_matrix",
-            ]
-        },
-        "threshold": best["threshold"],
-        "selected_threshold": best["threshold"],
-        "threshold_strategy": payload.threshold_strategy,
-        "threshold_metrics": best.get("threshold_metrics"),
-        "threshold_candidates_top_5": best.get("threshold_candidates_top_5", []),
-        "threshold_tuning": best.get("threshold_tuning"),
-        "selection_strategy": payload.best_model_strategy,
+        "training_profile": payload.training_profile,
+        "threshold_config": threshold_config.__dict__,
+        "selection_strategy": payload.training_profile,
+        "selection_metric": selection_metric,
         "selection_score": selection_score,
         "selection_reason": selection_reason,
-        "reason_for_selection": best.get("reason_for_selection") or selection_reason,
+        "auto_activated": bool(payload.auto_activate_best),
         "comparison": trained,
         "failed_models": failed,
         "warnings": warning_messages,
@@ -642,61 +611,101 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
         "sklearn_version": sklearn.__version__,
         "created_at": created_at,
     }
-    artifact_payload = {
-        "estimator": best_fit["estimator"],
-        "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
-        "metadata": metadata,
-    }
-    joblib.dump(artifact_payload, PRODUCTION_ARTIFACT)
-    PRODUCTION_METADATA.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-
-    model_id = model_repository.upsert_production_model(
-        {
-            "name": model_repository.PRODUCTION_MODEL_NAME,
-            "model_type": best["model_type"],
-            "version": version,
-            "artifact_path": str(PRODUCTION_ARTIFACT),
-            "is_active": 1,
-            "latency_ms": best["latency_ms"],
-            "hyperparameters_json": json.dumps(
-                {
-                    **payload.model_dump(),
-                    "production_metadata": str(PRODUCTION_METADATA),
-                    "threshold": best["threshold"],
-                    "threshold_strategy": payload.threshold_strategy,
-                    "selection_strategy": payload.best_model_strategy,
-                    "selection_score": selection_score,
-                    "selection_reason": selection_reason,
-                    "sklearn_version": sklearn.__version__,
-                    "excluded_leakage_columns": EXCLUDED_LEAKAGE_COLUMNS,
-                },
-                ensure_ascii=False,
-            ),
-            "feature_list_json": json.dumps(SAFE_MODEL_FEATURE_COLUMNS),
-            "pr_auc": best.get("pr_auc"),
-            "threshold": best["threshold"],
-            "selection_strategy": payload.best_model_strategy,
-            "selection_score": selection_score,
-            **{key: best.get(key) for key in ["accuracy", "precision", "recall", "f1_score", "roc_auc"]},
-        }
-    )
 
     run_map = []
-    for item in trained:
-        item_selection_score = _selection_score(item, payload.best_model_strategy)
+    best_model_id = None
+    ordered_trained = sorted(trained, key=lambda item: 0 if item["model_type"] == best["model_type"] else 1)
+    for item in ordered_trained:
+        item_selection_score = _selection_score(item, selection_metric)
+        is_best = item["model_type"] == best["model_type"]
+        artifact_path, metadata_path = _artifact_paths(version, item["model_type"], payload.training_profile)
+        item_metadata = {
+            **common_metadata,
+            "name": f"DefectAI P7 {item['model_name']}",
+            "model_type": item["model_type"],
+            "model_key": item["model_type"],
+            "model_name": item["model_name"],
+            "metrics": _metrics_subset(item),
+            "threshold": item["threshold"],
+            "selected_threshold": item["threshold"],
+            "threshold_strategy": item["threshold_strategy"],
+            "threshold_metrics": item.get("threshold_metrics"),
+            "threshold_candidates_top_5": item.get("threshold_candidates_top_5", []),
+            "threshold_tuning": item.get("threshold_tuning"),
+            "selection_score": item_selection_score,
+            "is_best": is_best,
+            "reason_for_selection": item.get("reason_for_selection") or selection_reason,
+        }
+        artifact_payload = {
+            "estimator": fitted_estimators[item["model_type"]]["estimator"],
+            "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
+            "metadata": item_metadata,
+        }
+        joblib.dump(artifact_payload, artifact_path)
+        metadata_path.write_text(json.dumps(item_metadata, indent=2), encoding="utf-8")
+        model_id = model_repository.create_model(
+            {
+                "name": item_metadata["name"],
+                "model_type": item["model_type"],
+                "version": version,
+                "artifact_path": str(artifact_path),
+                "metadata_path": str(metadata_path),
+                "is_active": 0,
+                "is_best": is_best,
+                "dataset_id": payload.dataset_id,
+                "training_profile": payload.training_profile,
+                "latency_ms": item["latency_ms"],
+                "hyperparameters_json": json.dumps(
+                    {
+                        **payload.model_dump(),
+                        "threshold_config": threshold_config.__dict__,
+                        "threshold": item["threshold"],
+                        "selection_strategy": payload.training_profile,
+                        "selection_metric": selection_metric,
+                        "selection_score": item_selection_score,
+                        "selection_reason": selection_reason,
+                        "sklearn_version": sklearn.__version__,
+                        "excluded_leakage_columns": EXCLUDED_LEAKAGE_COLUMNS,
+                    },
+                    ensure_ascii=False,
+                ),
+                "feature_list_json": json.dumps(SAFE_MODEL_FEATURE_COLUMNS),
+                "metrics_json": json.dumps(_metrics_subset(item), ensure_ascii=False),
+                "pr_auc": item.get("pr_auc"),
+                "threshold": item["threshold"],
+                "selection_strategy": payload.training_profile,
+                "selection_metric": selection_metric,
+                "selection_score": item_selection_score,
+                "status": "success",
+                **{key: item.get(key) for key in ["accuracy", "precision", "recall", "f1_score", "roc_auc"]},
+            }
+        )
+        item["model_id"] = model_id
+        item["artifact_path"] = str(artifact_path)
+        item["metadata_path"] = str(metadata_path)
+        item["selection_score"] = item_selection_score
+        item["is_best"] = is_best
+        if is_best:
+            best_model_id = model_id
+            model_repository.mark_best_model(model_id)
+            joblib.dump(artifact_payload, PRODUCTION_ARTIFACT)
+            PRODUCTION_METADATA.write_text(json.dumps(item_metadata, indent=2), encoding="utf-8")
+
         run_id = model_repository.create_training_run(
             {
                 "model_id": model_id,
                 "dataset_id": payload.dataset_id,
                 "model_type": item["model_type"],
                 "model_version": version,
+                "status": "completed",
                 "train_size": len(X_train),
                 "test_size": len(X_test),
                 "confusion_matrix_json": json.dumps(item["confusion_matrix"]),
                 "training_time_seconds": item["training_time_seconds"],
                 "pr_auc": item.get("pr_auc"),
                 "threshold": item["threshold"],
-                "selection_strategy": payload.best_model_strategy,
+                "selection_strategy": payload.training_profile,
+                "selection_metric": selection_metric,
                 "selection_score": item_selection_score,
                 "parameters_json": json.dumps(
                     {
@@ -705,6 +714,7 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
                         "warnings": warning_messages,
                         "threshold": item["threshold"],
                         "selected_threshold": item["threshold"],
+                        "threshold_config": threshold_config.__dict__,
                         "threshold_metrics": item.get("threshold_metrics"),
                         "threshold_candidates_top_5": item.get("threshold_candidates_top_5"),
                         "reason_for_selection": item.get("reason_for_selection"),
@@ -716,6 +726,11 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
                     },
                     ensure_ascii=False,
                 ),
+                "selected_models_json": json.dumps(selected_models),
+                "training_profile": payload.training_profile,
+                "threshold_config_json": json.dumps(threshold_config.__dict__),
+                "best_model_id": best_model_id,
+                "results_json": json.dumps(trained, default=str, ensure_ascii=False),
                 "started_at": datetime.now(),
                 "completed_at": datetime.now(),
                 **{key: item.get(key) for key in ["accuracy", "precision", "recall", "f1_score", "roc_auc"]},
@@ -723,11 +738,14 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
         )
         run_map.append({**item, "run_id": run_id, "model_id": model_id, "selection_score": item_selection_score})
 
+    if best_model_id is None:
+        raise ValueError("Training completed but no best model was created.")
+
     if payload.auto_activate_best:
-        model_repository.activate_model(model_id)
+        model_repository.activate_model(best_model_id)
         from app.repositories import project_state_repository
 
-        project_state_repository.update_state(payload.project_id, current_model_id=model_id)
+        project_state_repository.update_state(payload.project_id, current_model_id=best_model_id)
     from app.repositories import dataset_repository
 
     if payload.dataset_id:
@@ -735,35 +753,42 @@ def train_production(payload: TrainingRequest, model_types: list[str] | None = N
     log_action(
         "ml.production_training.completed",
         "MLModel",
-        model_id,
+        best_model_id,
         payload.project_id,
         details={"trained": trained, "best": best, "failed": failed, "warnings": warning_messages},
     )
-    production_model = model_repository.get_model(model_id)
+    production_model = model_repository.get_model(best_model_id)
+    best_run = next(item for item in run_map if item["model_id"] == best_model_id)
     return {
         "production_model": production_model,
-        "best_model_id": model_id,
+        "best_model_id": best_model_id,
         "best_model_type": best["model_type"],
+        "best_model_key": best["model_type"],
         "best_model_name": best["model_name"],
-        "selection_strategy": payload.best_model_strategy,
+        "selected_models": selected_models,
+        "training_profile": payload.training_profile,
+        "selection_strategy": payload.training_profile,
+        "selection_metric": selection_metric,
         "selection_score": selection_score,
         "selection_reason": selection_reason,
         "reason_for_selection": best.get("reason_for_selection") or selection_reason,
         "threshold": best["threshold"],
         "selected_threshold": best["threshold"],
-        "threshold_strategy": payload.threshold_strategy,
+        "threshold_strategy": threshold_config.strategy,
+        "threshold_config": threshold_config.__dict__,
         "threshold_metrics": best.get("threshold_metrics"),
         "threshold_candidates_top_5": best.get("threshold_candidates_top_5", []),
-        "metrics": metadata["metrics"],
+        "metrics": _metrics_subset(best),
         "model_comparison": run_map,
         "comparison": run_map,
         "failed_models": failed,
         "warnings": warning_messages,
         "feature_columns": SAFE_MODEL_FEATURE_COLUMNS,
         "excluded_leakage_columns": EXCLUDED_LEAKAGE_COLUMNS,
-        "artifact_path": str(PRODUCTION_ARTIFACT),
-        "metadata_path": str(PRODUCTION_METADATA),
-        "metadata": metadata,
+        "artifact_path": best_run["artifact_path"],
+        "metadata_path": best_run["metadata_path"],
+        "metadata": {**common_metadata, "metrics": _metrics_subset(best), "threshold": best["threshold"]},
+        "auto_activated": bool(payload.auto_activate_best),
         "models": model_repository.list_models(),
         "training_runs": model_repository.list_training_runs(),
     }
@@ -795,8 +820,8 @@ def training_run(run_id: int):
     return model_repository.get_training_run(run_id)
 
 
-def comparison():
-    return model_repository.comparison()
+def comparison(dataset_id: int | None = None):
+    return model_repository.comparison(dataset_id)
 
 
 def delete_model(model_id: int):
@@ -826,11 +851,13 @@ def trainable_datasets(project_id: int):
 def training_guide():
     return {
         "title": "How to train DefectAI models",
+        "profiles": profile_metadata(),
         "steps": [
             "Upload a dataset containing module_name, loc, complexity, coupling, code_churn, defect_label.",
             "defect_label must use 0 for No Defect and 1 for Defect.",
             "DefectAI excludes leakage-prone columns such as defect_count, defect_density, labels, and prediction outputs from model features.",
-            "Training compares Accuracy, Precision, Recall, F1, balanced F-beta, ROC-AUC, PR-AUC and activates the best balanced-F1 model.",
+            "Choose Logistic Regression, Random Forest, Neural Network, or train all models.",
+            "Select a training profile to tune threshold and best-model ranking for the product goal.",
             "Prediction uses the tuned artifact threshold, not a hardcoded 0.5 threshold.",
         ],
     }

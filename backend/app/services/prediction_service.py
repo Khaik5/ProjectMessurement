@@ -19,7 +19,14 @@ logger = logging.getLogger(__name__)
 
 MODEL_SOURCE_AI = "AI production model"
 MODEL_SOURCE_FALLBACK = "Measurement fallback"
+MODEL_SOURCE_SANITY_GUARD = "Measurement fallback (ML sanity guard)"
 DEFAULT_THRESHOLD = 0.5
+LOW_MEASUREMENT_AVG_GUARD = 0.15
+LOW_MEASUREMENT_MAX_GUARD = 0.30
+HIGH_ML_AVG_GUARD = 0.75
+HIGH_ML_CRITICAL_SHARE_GUARD = 0.50
+HIGH_ML_SATURATION_SHARE_GUARD = 0.25
+SANITY_GUARD_MAX_LIFT = 0.20
 
 
 def _active_estimator(model_id: int | None = None):
@@ -73,9 +80,13 @@ def _predict_probabilities(estimator_payload, features: pd.DataFrame):
     return np.clip(probabilities.astype(float), 0.0, 1.0), warnings, feature_columns
 
 
-def _threshold(estimator_payload) -> float:
+def _threshold(estimator_payload, model: dict | None = None) -> float:
     metadata = estimator_payload.get("metadata") if isinstance(estimator_payload, dict) else None
-    value = (metadata or {}).get("threshold", DEFAULT_THRESHOLD)
+    value = (metadata or {}).get("threshold")
+    if value is None and model:
+        value = model.get("threshold")
+    if value is None:
+        value = DEFAULT_THRESHOLD
     try:
         value = float(value)
     except (TypeError, ValueError):
@@ -85,6 +96,52 @@ def _threshold(estimator_payload) -> float:
         return value
     logger.warning("Artifact threshold %.4f out of range; using default %.2f", value, DEFAULT_THRESHOLD)
     return DEFAULT_THRESHOLD
+
+
+def _batch_probability_sanity_guard(features: pd.DataFrame, ml_probs: np.ndarray | None, model: dict | None = None) -> dict | None:
+    if ml_probs is None or len(features) < 10:
+        return None
+    measurement = pd.to_numeric(features.get("risk_score"), errors="coerce").fillna(0.0).clip(0.0, 1.0).to_numpy(dtype=float)
+    probabilities = np.clip(np.asarray(ml_probs, dtype=float), 0.0, 1.0)
+    if not len(measurement) or not len(probabilities):
+        return None
+    measurement_avg = float(np.mean(measurement))
+    measurement_max = float(np.max(measurement))
+    ml_avg = float(np.mean(probabilities))
+    ml_critical_share = float(np.mean(probabilities >= 0.80))
+    ml_saturation_share = float(np.mean(probabilities >= 0.95))
+    if (
+        measurement_avg <= LOW_MEASUREMENT_AVG_GUARD
+        and measurement_max <= LOW_MEASUREMENT_MAX_GUARD
+        and (
+            ml_avg >= HIGH_ML_AVG_GUARD
+            or ml_critical_share >= HIGH_ML_CRITICAL_SHARE_GUARD
+            or ml_saturation_share >= HIGH_ML_SATURATION_SHARE_GUARD
+        )
+    ):
+        return {
+            "reason": (
+                "ML probability sanity guard activated: measurement features are low-risk "
+                f"(avg={measurement_avg:.3f}, max={measurement_max:.3f}) but model probabilities are saturated "
+                f"(avg={ml_avg:.3f}, critical_share={ml_critical_share:.3f}, p95_share={ml_saturation_share:.3f})."
+            ),
+            "measurement_avg": measurement_avg,
+            "measurement_max": measurement_max,
+            "ml_avg": ml_avg,
+            "ml_critical_share": ml_critical_share,
+            "ml_saturation_share": ml_saturation_share,
+            "model_id": model.get("id") if model else None,
+            "model_name": model.get("name") if model else None,
+        }
+    return None
+
+
+def _sanity_calibrated_probability(ml_probability: float | None, measurement_risk: float) -> float:
+    measurement = max(0.0, min(1.0, float(measurement_risk or 0.0)))
+    if ml_probability is None:
+        return measurement
+    ml_value = max(0.0, min(1.0, float(ml_probability)))
+    return max(measurement, min(ml_value, measurement + SANITY_GUARD_MAX_LIFT))
 
 
 def _prediction_value(probability: float, threshold: float) -> int:
@@ -135,7 +192,7 @@ def predict_single(payload: PredictionSingleRequest):
         source = f"fallback_model_error: {exc}"
         feature_columns = SAFE_MODEL_FEATURE_COLUMNS
     used_active = ml_probs is not None
-    threshold = _threshold(estimator) if used_active else DEFAULT_THRESHOLD
+    threshold = _threshold(estimator, model) if used_active else DEFAULT_THRESHOLD
     prob = round(float(ml_probs[0]) if used_active else measurement_risk, 4)
     prob = max(0.0, min(1.0, prob))
     risk = classify_risk(prob)
@@ -177,6 +234,10 @@ def predict_single(payload: PredictionSingleRequest):
         "risk_level": risk["name"],
         "suggested_action": risk["suggested_action"],
         "model_source": model_source,
+        "model_id": model.get("id") if model and used_active else None,
+        "model_name": model.get("name") if model and used_active else "Measurement-based fallback",
+        "model_key": model.get("model_type") if model and used_active else None,
+        "training_profile": model.get("training_profile") if model and used_active else None,
         "model_used": model.get("name") if model and used_active else "Measurement-based fallback",
         "used_fallback": not used_active,
         "fallback_reason": None if used_active else source,
@@ -207,12 +268,18 @@ def predict_batch(payload: PredictionRunRequest):
     rows = []
     results = []
     used_active = ml_probs is not None
-    threshold = _threshold(estimator) if used_active else DEFAULT_THRESHOLD
-    model_source = MODEL_SOURCE_AI if used_active else MODEL_SOURCE_FALLBACK
+    threshold = _threshold(estimator, model) if used_active else DEFAULT_THRESHOLD
+    sanity_guard = _batch_probability_sanity_guard(features, ml_probs, model) if used_active else None
+    if sanity_guard:
+        logger.warning(sanity_guard["reason"])
+        prediction_warnings.append(sanity_guard["reason"])
+        model_source = MODEL_SOURCE_SANITY_GUARD
+    else:
+        model_source = MODEL_SOURCE_AI if used_active else MODEL_SOURCE_FALLBACK
     for idx, feature in features.reset_index(drop=True).iterrows():
         measurement_risk = round(float(feature.get("risk_score") or 0.0), 4)
         ml_prob = float(ml_probs[idx]) if used_active else None
-        prob = round(ml_prob if used_active else measurement_risk, 4)
+        prob = round(_sanity_calibrated_probability(ml_prob, measurement_risk) if sanity_guard else (ml_prob if used_active else measurement_risk), 4)
         prob = max(0.0, min(1.0, prob))
         risk = classify_risk(prob)
         risk_id = _risk_id(risk["name"])
@@ -222,7 +289,7 @@ def predict_batch(payload: PredictionRunRequest):
             (
                 payload.project_id,
                 payload.dataset_id,
-                model["id"] if model and used_active else None,
+                model["id"] if model and used_active and not sanity_guard else None,
                 feature["module_name"],
                 int(feature["loc"]),
                 float(feature["complexity"]),
@@ -245,6 +312,8 @@ def predict_batch(payload: PredictionRunRequest):
             {
                 **feature.to_dict(),
                 "defect_probability": prob,
+                "raw_ml_probability": round(ml_prob, 4) if ml_prob is not None else None,
+                "probability_guard_applied": bool(sanity_guard),
                 "prediction": predicted,
                 "prediction_label_numeric": predicted,
                 "prediction_label": label,
@@ -252,8 +321,12 @@ def predict_batch(payload: PredictionRunRequest):
                 "risk_level": risk["name"],
                 "suggested_action": risk["suggested_action"],
                 "model_source": model_source,
-                "model_used": model.get("name") if model and used_active else "Measurement-based fallback",
-                "used_fallback": not used_active,
+                "model_id": model.get("id") if model and used_active and not sanity_guard else None,
+                "model_name": model.get("name") if model and used_active and not sanity_guard else model_source,
+                "model_key": model.get("model_type") if model and used_active and not sanity_guard else None,
+                "training_profile": model.get("training_profile") if model and used_active and not sanity_guard else None,
+                "model_used": model.get("name") if model and used_active and not sanity_guard else model_source,
+                "used_fallback": (not used_active) or bool(sanity_guard),
                 "threshold": threshold,
             }
         )
@@ -271,11 +344,12 @@ def predict_batch(payload: PredictionRunRequest):
         "dataset_id": payload.dataset_id,
         "total_modules": len(results),
         "predictions_created": len(rows),
-        "used_model": model.get("name") if model and used_active else "Measurement-based fallback",
+        "used_model": model.get("name") if model and used_active and not sanity_guard else model_source,
         "model_source": model_source,
-        "fallback_reason": None if used_active else source,
-        "used_fallback": not used_active,
+        "fallback_reason": sanity_guard["reason"] if sanity_guard else (None if used_active else source),
+        "used_fallback": (not used_active) or bool(sanity_guard),
         "threshold": threshold,
+        "probability_guard": sanity_guard,
         "feature_columns": feature_columns,
         "warnings": prediction_warnings,
         "message": "Dataset analyzed successfully" if used_active else measurement_fallback_message(False, source),
